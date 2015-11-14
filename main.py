@@ -6,7 +6,8 @@ import numpy as np
 import theano
 import theano.tensor as T
 
-from scipy.stats import pearsonr
+import dependency_tree as tr
+
 
 sys.path.append('../Lasagne')
 
@@ -108,16 +109,15 @@ def load_data_matrix(data, args, seq_len=36, n_children=6, unfinished_flag=-2):
       
     return X1, X2, Y, scores, input_shape
 
-def load_data(data, wordEmbeddings, maxlen, args):
+def load_data(data, wordEmbeddings, args, maxlen=36):
 
-    Y = np.zeros((len(data), args.outputDim), dtype=np.float32)
-
+    
     X1 = np.zeros((len(data), maxlen, args.wvecDim), dtype=np.float32)
     X2 = np.zeros((len(data), maxlen, args.wvecDim), dtype=np.float32)
 
     Y_scores = np.zeros((len(data)), dtype=np.float32)
 
-    labels=[]
+    Y_labels = np.zeros((len(data)), dtype=np.int32)
     for i, (label, score, l_tree, r_tree) in enumerate(data):
 
         for j, Node in enumerate(l_tree.nodes):
@@ -126,18 +126,12 @@ def load_data(data, wordEmbeddings, maxlen, args):
         for k, Node in enumerate(r_tree.nodes):
             X2[i, k] =  wordEmbeddings[:, Node.index]
 
-        scores[i] = score
-        labels.append(label)
-
-    labels = np.asarray(labels, dtype='int32')
-
-    Y_labels = np.zeros(len(labels), args.outputDim)
-    for i in range(len(labels)):
-        Y_labels[i, labels[i]] = 1
+        Y_scores[i] = score
+        Y_labels[i] = label
         
     return X1, X2, Y_labels, Y_scores
 
-def build_network_0(args, input1_var=None, input2_var=None, maxlen=30):
+def build_network_0(args, input1_var=None, input2_var=None, maxlen=36):
 
     print("Building model 0 and compiling functions...")
 
@@ -171,34 +165,28 @@ def build_network_0(args, input1_var=None, input2_var=None, maxlen=30):
         l1_in, args.wvecDim, grad_clipping=GRAD_CLIP,
         nonlinearity=lasagne.nonlinearities.tanh)
 
-    #l_forward_1 = lasagne.layers.FeaturePoolLayer(l_forward_1,pool_size=4, pool_function=T.mean)
-
-
     l_forward_2 = lasagne.layers.LSTMLayer(
         l2_in, args.wvecDim, grad_clipping=GRAD_CLIP,
         nonlinearity=lasagne.nonlinearities.tanh)
-
-    #l_forward_2 = lasagne.layers.FeaturePoolLayer(l_forward_2,pool_size=4, pool_function=T.mean)
-
 
     l12_mul = lasagne.layers.ElemwiseMergeLayer([l_forward_1, l_forward_2], merge_function=T.mul)
     l12_sub = lasagne.layers.ElemwiseMergeLayer([l_forward_1, l_forward_2], merge_function=T.sub)
     l12_sub = lasagne.layers.AbsLayer(l12_sub)
 
-    l12_mul_Dense = lasagne.layers.DenseLayer(l12_mul, num_units=args.wvecDim, nonlinearity=None, b=None)
+    l12_mul_Dense = lasagne.layers.DenseLayer(l12_mul, num_units=args.hiddenDim, nonlinearity=None, b=None)
 
-    l12_sub_Dense = lasagne.layers.DenseLayer(l12_sub, num_units=args.wvecDim, nonlinearity=None, b=None)
+    l12_sub_Dense = lasagne.layers.DenseLayer(l12_sub, num_units=args.hiddenDim, nonlinearity=None, b=None)
 
     joined = lasagne.layers.ElemwiseSumLayer([l12_mul_Dense, l12_sub_Dense])
-    l_hid1 = lasagne.layers.NonlinearityLayer(joined, nonlinearity=lasagne.nonlinearities.sigmoid)
+    l_hid1 = lasagne.layers.NonlinearityLayer(joined, nonlinearity=lasagne.nonlinearities.rectify)
+
+    l_hid1_drop = lasagne.layers.DropoutLayer(l_hid1, p=0.5)
 
     l_out = lasagne.layers.DenseLayer(
-            l_hid1, num_units=args.outputDim,
+            l_hid1_drop, num_units=args.numLabels,
             nonlinearity=lasagne.nonlinearities.softmax)
 
     return l_out
-
-
 
 def build_network_1(args, input1_var=None, input2_var=None, maxlen=30):
 
@@ -262,8 +250,8 @@ def build_network_1(args, input1_var=None, input2_var=None, maxlen=30):
 
     return l_out
 
-def iterate_minibatches(inputs1, inputs2, targets, scores, batchsize, shuffle=False):
-    assert len(inputs1) == len(targets)
+def iterate_minibatches(inputs1, inputs2, Y_labels, Y_scores, batchsize, shuffle=False):
+    assert len(inputs1) == len(Y_labels)
     if shuffle:
         indices = np.arange(len(inputs1))
         np.random.shuffle(indices)
@@ -272,7 +260,7 @@ def iterate_minibatches(inputs1, inputs2, targets, scores, batchsize, shuffle=Fa
             excerpt = indices[start_idx:start_idx + batchsize]
         else:
             excerpt = slice(start_idx, start_idx + batchsize)
-        yield inputs1[excerpt], inputs2[excerpt], targets[excerpt], scores[excerpt]
+        yield inputs1[excerpt], inputs2[excerpt], Y_labels[excerpt], Y_scores[excerpt]
 
 
 if __name__ == '__main__':
@@ -282,26 +270,17 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Usage")
 
     parser.add_argument("--minibatch",dest="minibatch",type=int,default=30)
-    parser.add_argument("--optimizer",dest="optimizer",type=str,default=None)
+    parser.add_argument("--optimizer",dest="optimizer",type=str,default="sgd")
     parser.add_argument("--epochs",dest="epochs",type=int,default=50)
-    parser.add_argument("--step",dest="step",type=float,default=1e-2)
-    parser.add_argument("--outputDim",dest="outputDim",type=int,default=5)
+    parser.add_argument("--step",dest="step",type=float,default=0.01)
+    parser.add_argument("--rangeScores",dest="rangeScores",type=int,default=5)
+    parser.add_argument("--numLabels",dest="numLabels",type=int,default=3)
     parser.add_argument("--hiddenDim",dest="hiddenDim",type=int,default=50)
     parser.add_argument("--wvecDim",dest="wvecDim",type=int,default=30)
     parser.add_argument("--outFile",dest="outFile",type=str, default="models/test.bin")
-    parser.add_argument("--numProcess",dest="numProcess",type=int,default=None)
     parser.add_argument("--repModel",dest="repModel",type=str,default="lstm")
-    parser.add_argument("--debug",dest="debug",type=str,default="False")
-    parser.add_argument("--useLearnedModel",dest="useLearnedModel",type=str,default="False")
     args = parser.parse_args()
-
-    if args.debug == "True":
-        import pdb
-        pdb.set_trace()
-
-    # Load the dataset
-    print("Loading data...")
-    import dependency_tree as tr     
+         
     trainTrees = tr.loadTrees("train")
     devTrees = tr.loadTrees("dev")
     testTrees = tr.loadTrees("test")
@@ -310,22 +289,19 @@ if __name__ == '__main__':
     print "dev number %d"%len(devTrees)
     print "test number %d"%len(testTrees)
 
-    word2vecs = tr.loadWord2VecMap()
-
-    wordEmbeddings = word2vecs[:args.wvecDim, :]
+    wordEmbeddings = tr.loadWord2VecMap()[:args.wvecDim, :]
     
-    maxlen = 36
-    X1_train, X2_train, Y_train, scores_train = load_data(trainTrees, wordEmbeddings, maxlen, args)
-    X1_dev, X2_dev, Y_dev, scores_dev = load_data(devTrees, wordEmbeddings, maxlen, args)
-    X1_test, X2_test, Y_test, scores_test = load_data(testTrees, wordEmbeddings, maxlen, args)
+    X1_train, X2_train, Y_labels_train, Y_scores_train = load_data(trainTrees, wordEmbeddings, args)
+    X1_dev, X2_dev, Y_labels_dev, Y_scores_dev = load_data(devTrees, wordEmbeddings, args)
+    X1_test, X2_test, Y_labels_test, Y_scores_test = load_data(testTrees, wordEmbeddings, args)
 
     # Prepare Theano variables for inputs and targets
-    input1_var = T.tensor3('inputs_1')
-    input2_var = T.tensor3('inputs_2')
-    target_var = T.fmatrix('targets')
+    input1_var = T.ftensor3('inputs_1')
+    input2_var = T.ftensor3('inputs_2')
+    target_var = T.ivector('targets')
 
     # Create neural network model (depending on first command line parameter)
-    network = build_network_0(args, input1_var, input2_var, maxlen)
+    network = build_network_0(args, input1_var, input2_var)
 
     # Create a loss expression for training, i.e., a scalar objective we want
     # to minimize (for our multi-class problem, it is the cross-entropy loss):
@@ -356,8 +332,9 @@ if __name__ == '__main__':
     # the updates dictionary) and returning the corresponding training loss:
     train_fn = theano.function([input1_var, input2_var, target_var], loss, updates=updates, allow_input_downcast=True)
 
+    test_acc = T.mean(T.eq(T.argmax(test_prediction, axis=1), target_var), dtype=theano.config.floatX)
     # Compile a second function computing the validation loss and accuracy:
-    val_fn = theano.function([input1_var, input2_var, target_var], [test_loss, test_prediction], allow_input_downcast=True)
+    val_fn = theano.function([input1_var, input2_var, target_var], [test_loss, test_acc], allow_input_downcast=True)
 
     # Finally, launch the training loop.
     print("Starting training...")
@@ -367,60 +344,47 @@ if __name__ == '__main__':
         train_err = 0
         train_batches = 0
         start_time = time.time()
-        for batch in iterate_minibatches(X1_train, X2_train, Y_train, scores_train, args.minibatch, shuffle=True):
-            inputs1, inputs2, targets, _ = batch
-            train_err += train_fn(inputs1, inputs2, targets)
+        for batch in iterate_minibatches(X1_train, X2_train, Y_labels_train, Y_scores_train, args.minibatch, shuffle=True):
+            inputs1, inputs2, labels, _ = batch
+            train_err += train_fn(inputs1, inputs2, labels)
             train_batches += 1
 
         # And a full pass over the validation data:
         
         val_err = 0
+        val_acc = 0
         val_batches = 0
-        val_pearson = 0
-        for batch in iterate_minibatches(X1_dev, X2_dev, Y_dev, scores_dev, 500, shuffle=False):
-            inputs1, inputs2, targets, scores = batch
-            err, preds = val_fn(inputs1, inputs2, targets)
+        for batch in iterate_minibatches(X1_dev, X2_dev, Y_labels_dev, Y_scores_dev, 500, shuffle=False):
+            inputs1, inputs2, labels, _ = batch
+            err, acc = val_fn(inputs1, inputs2, labels)
             val_err += err
+            val_acc += acc
             val_batches += 1
 
-            predictScores = preds.dot(np.array([1,2,3,4,5]))
-            guesses = predictScores.tolist()
-            scores = scores.tolist()
-            pearson_score = pearsonr(scores,guesses)[0]
-            val_pearson += pearson_score 
-
-        
         # Then we print the results for this epoch:
         print("Epoch {} of {} took {:.3f}s".format(
             epoch + 1, args.epochs, time.time() - start_time))
         print("  training loss:\t\t{:.6f}".format(train_err / train_batches))
         print("  validation loss:\t\t{:.6f}".format(val_err / val_batches))
 
-
-        print("  validation pearson:\t\t{:.2f} %".format(
-            val_pearson / val_batches * 100))
+        print("  validation accuracy:\t\t{:.2f} %".format(
+            val_acc / val_batches * 100))
 
     # After training, we compute and print the test error:
     test_err = 0
-    test_pearson = 0
+    test_acc = 0
     test_batches = 0
-    for batch in iterate_minibatches(X1_test, X2_test, Y_test, scores_test, 4500, shuffle=False):
+    for batch in iterate_minibatches(X1_test, X2_test, Y_labels_test, Y_scores_test, 4500, shuffle=False):
         inputs1, inputs2, targets, scores = batch
-        err, preds = val_fn(inputs1, inputs2, targets)
+        err, acc = val_fn(inputs1, inputs2, targets)
         test_err += err
+        test_acc += acc
         test_batches += 1
-
-        predictScores = preds.dot(np.array([1,2,3,4,5]))
-        guesses = predictScores.tolist()
-        scores = scores.tolist()
-        pearson_score = pearsonr(scores,guesses)[0]
-        test_pearson += pearson_score 
-
 
     print("Final results:")
     print("  test loss:\t\t\t{:.6f}".format(test_err / test_batches))
-    print("  test pearson:\t\t{:.2f} %".format(
-        test_pearson / test_batches * 100))
+    print("  test accuracy:\t\t{:.2f} %".format(
+        test_acc / test_batches * 100))
 
     # Optionally, you could now dump the network weights to a file like this:
     # np.savez('model.npz', *lasagne.layers.get_all_param_values(network))

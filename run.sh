@@ -9,21 +9,21 @@ set -x
 epochs=100
 step=0.01
 numLabels=3
+rangeScores=5
 hiddenDim=100
 wvecDim=200
 miniBatch=128
 model=LSTM
 optimizer=sgd
-debug=False
-useLearnedModel=False
 
 outFile="models/${model}_wvecDim_${wvecDim}_step_${step}_optimizer_${optimizer}.bin"
 
 
 
-python -u main.py --debug $debug --useLearnedModel $useLearnedModel --step $step --repModel $model \
+python -u main.py --step $step --repModel $model \
 				  --optimizer $optimizer --hiddenDim $hiddenDim --epochs $epochs --outFile $outFile\
-                  				--outputDim $numLabels --minibatch $miniBatch --wvecDim $wvecDim
+                  			--rangeScores $rangeScores	--numLabels $numLabels\
+                  			--minibatch $miniBatch --wvecDim $wvecDim
 
 
 

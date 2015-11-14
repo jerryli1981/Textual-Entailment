@@ -3,6 +3,7 @@ import re
 from stanford_parser_wrapper import Parser
 import cPickle
 import os
+import dependency_tree as dt
 
 def make_dirs(dirs):
     for d in dirs:
@@ -105,6 +106,8 @@ if __name__ == "__main__":
 
     build_datasets()
 
+    dt.buildWordRelMap("train_dataset","dev_dataset", "test_dataset")
 
+    dt.build_word2Vector_glove()
 
 

@@ -351,6 +351,7 @@ def loadTrees(dataSet='train', merged=False):
     import cPickle as pickle
     wordMap = loadWordMap()
     relMap = loadRelMap()
+    labelIdx_m = {"NEUTRAL":2, "ENTAILMENT":1, "CONTRADICTION":0}
     
     file = dataSet+'_dataset'
 
@@ -365,7 +366,7 @@ def loadTrees(dataSet='train', merged=False):
             first_parse, second_parse = datum["parse"]
 
             score = float(datum["score"])
-            label = int(datum["label"])
+            label = labelIdx_m[datum["label"]]
             first_depTree = DTree(first_parse)
             second_depTree = DTree(second_parse)
             if merged:
@@ -422,15 +423,3 @@ def loadTrees(dataSet='train', merged=False):
                         rel.index = relMap[rel.mention.split("_")[0]]
 
     return trees
-
-
-if __name__=='__main__':
-
-    _Debug_ = False
-    if _Debug_:
-        import pdb
-        pdb.set_trace()
-
-    buildWordRelMap("train_dataset","dev_dataset", "test_dataset")
-
-    build_word2Vector_glove()
