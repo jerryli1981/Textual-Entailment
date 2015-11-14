@@ -15,7 +15,7 @@ def split(filepath, dst_dir):
          open(os.path.join(dst_dir, 'b.txt'), 'w') as bfile, \
          open(os.path.join(dst_dir, 'id.txt'), 'w') as idfile, \
          open(os.path.join(dst_dir, 'sim.txt'), 'w') as simfile,\
-         open(os.path.join(dst_dir, 'label.txt').'w') as labelfile:
+         open(os.path.join(dst_dir, 'label.txt'),'w') as labelfile:
             datafile.readline()
             for line in datafile:
                 i, a, b, sim, ent = line.strip().split('\t')
@@ -31,19 +31,24 @@ def clean_str(string):
     string = re.sub(r"\s{2,}", " ", string)       
     return string.strip()
 
-def build_datasets_sick():
+def build_datasets():
     parser = Parser() 
     folders = ['train', 'dev', 'test']
     
     for folder in folders:
         index = 0
         dataset = []
-        a_s = "./sick/"+folder+"/a.txt"
-        b_s = "./sick/"+folder+"/b.txt"
-        sims = "./sick/"+folder+"/sim.txt"
-        
-        with open(a_s, "rb") as f1, open(b_s, "rb") as f2, open(sims, "rb") as f3:                            
-            for a, b, sim in zip(f1,f2,f3):
+        a_s = "./data/sick/"+folder+"/a.txt"
+        b_s = "./data/sick/"+folder+"/b.txt"
+        sims = "./data/sick/"+folder+"/sim.txt"
+        labs = "./data/sick/"+folder+"/label.txt"        
+
+        with open(a_s, "rb") as f1, \
+             open(b_s, "rb") as f2, \
+             open(sims, "rb") as f3, \
+             open(labs, 'rb') as f4:
+                            
+            for a, b, sim, ent in zip(f1,f2,f3,f4):
                 index += 1
                 if index % 200 == 0:
                     print index
@@ -71,7 +76,8 @@ def build_datasets_sick():
                     #traceback.print_exc()
                     continue
     
-                datum = {   "score":sim.strip(), 
+                datum = {   "score":sim.strip(),
+                            "label":ent.strip(), 
                             "text": (first_sent, second_sent), 
                             "parse":(first_parse_output, second_parse_output)
                         }
@@ -94,12 +100,10 @@ if __name__ == "__main__":
     make_dirs([train_dir, dev_dir, test_dir])
 
     split(os.path.join(sick_dir, 'SICK_train.txt'), train_dir)
-    split(os.path.join(sick_dir, 'SICK_trail.txt'), dev_dir)
+    split(os.path.join(sick_dir, 'SICK_trial.txt'), dev_dir)
     split(os.path.join(sick_dir, 'SICK_test_annotated.txt'), test_dir)
 
-
-
-
+    build_datasets()
 
 
 
