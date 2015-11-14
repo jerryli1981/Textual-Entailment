@@ -1,6 +1,7 @@
 import cPickle
 import numpy as np
 import sys
+import os
 
 def get_idx_from_sent(sent, word_idx_map, max_l=35, filter_h=6):
     """
