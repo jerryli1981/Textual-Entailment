@@ -1,8 +1,29 @@
 import glob
 import re
-import numpy as np
 from stanford_parser_wrapper import Parser
 import cPickle
+import os
+
+def make_dirs(dirs):
+    for d in dirs:
+        if not os.path.exists(d):
+            os.makedirs(d)
+
+def split(filepath, dst_dir):
+    with open(filepath) as datafile, \
+         open(os.path.join(dst_dir, 'a.txt'), 'w') as afile, \
+         open(os.path.join(dst_dir, 'b.txt'), 'w') as bfile, \
+         open(os.path.join(dst_dir, 'id.txt'), 'w') as idfile, \
+         open(os.path.join(dst_dir, 'sim.txt'), 'w') as simfile,\
+         open(os.path.join(dst_dir, 'label.txt').'w') as labelfile:
+            datafile.readline()
+            for line in datafile:
+                i, a, b, sim, ent = line.strip().split('\t')
+                idfile.write(i+'\n')
+                afile.write(a+'\n')
+                bfile.write(b+'\n')
+                simfile.write(sim+'\n')
+                labelfile.write(ent+'\n')
 
 def clean_str(string):
     string = re.sub(r"[^A-Za-z0-9(),!?\'\`]", " ", string)
@@ -64,8 +85,17 @@ if __name__ == "__main__":
     print "Preprocessing SICK dataset"
     print("=" * 80)
 
+    base_dir = os.path.dirname(os.path.realpath(__file__))
+    data_dir = os.path.join(base_dir, 'data')
+    sick_dir = os.path.join(data_dir, 'sick')
+    train_dir = os.path.join(sick_dir, 'train')
+    dev_dir = os.path.join(sick_dir, 'dev')
+    test_dir = os.path.join(sick_dir,'test')
+    make_dirs([train_dir, dev_dir, test_dir])
 
-
+    split(os.path.join(sick_dir, 'SICK_train.txt'), train_dir)
+    split(os.path.join(sick_dir, 'SICK_trail.txt'), dev_dir)
+    split(os.path.join(sick_dir, 'SICK_test_annotated.txt'), test_dir)
 
 
 
