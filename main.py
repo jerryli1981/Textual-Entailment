@@ -8,8 +8,8 @@ import theano.tensor as T
 
 import dependency_tree as tr
 
-
-sys.path.append('../Lasagne')
+sys.path.insert(0, os.path.abspath('../Lasagne'))
+#sys.path.append('../Lasagne')
 
 import lasagne
 
