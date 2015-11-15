@@ -185,7 +185,7 @@ def build_network(args, input1_var=None, input2_var=None, maxlen=36):
         act_fun = lasagne.nonlinearities.rectify
     else:
         raise "Need set mlp activation correctly"
-        
+
     l_hid1 = lasagne.layers.NonlinearityLayer(joined, nonlinearity=act_fun)
 
     l_hid1_drop = lasagne.layers.DropoutLayer(l_hid1, p=0.5)
@@ -224,7 +224,6 @@ if __name__ == '__main__':
     parser.add_argument("--hiddenDim",dest="hiddenDim",type=int,default=50)
     parser.add_argument("--wvecDim",dest="wvecDim",type=int,default=30)
     parser.add_argument("--outFile",dest="outFile",type=str, default="models/test.bin")
-    parser.add_argument("--repModel",dest="repModel",type=str,default="lstm")
     parser.add_argument("--mlpActivation",dest="mlpActivation",type=str,default="sigmoid")
     args = parser.parse_args()
          
@@ -265,7 +264,15 @@ if __name__ == '__main__':
     #updates = lasagne.updates.nesterov_momentum(
             #loss, params, learning_rate=0.01, momentum=0.9)
 
-    updates = lasagne.updates.adagrad(loss, params, args.step)
+    if args.optimizer == "sgd":
+        updates = lasagne.updates.sgd(loss, params, args.step)
+    elif args.optimizer == "adagrad":
+        updates = lasagne.updates.adagrad(loss, params, args.step)
+    elif args.optimizer == "adadelta":
+        updates = lasagne.updates.adadelta(loss, params, args.step)
+    else:
+        raise "Need set optimizer correctly"
+ 
     # Create a loss expression for validation/testing. The crucial difference
     # here is that we do a deterministic forward pass through the network,
     # disabling dropout layers.

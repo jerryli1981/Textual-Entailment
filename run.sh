@@ -13,14 +13,13 @@ rangeScores=5
 hiddenDim=100
 wvecDim=200
 miniBatch=128
-repModel=LSTM
 mlpActivation=sigmoid
-optimizer=sgd
+optimizer=adagrad
 
 outFile="models/${model}_wvecDim_${wvecDim}_step_${step}_optimizer_${optimizer}.bin"
 
 
-python -u main.py --step $step --repModel $repModel --mlpActivation $mlpActivation \
+python -u main.py --step $step --mlpActivation $mlpActivation \
 				  --optimizer $optimizer --hiddenDim $hiddenDim --epochs $epochs --outFile $outFile\
                   			--rangeScores $rangeScores	--numLabels $numLabels\
                   			--minibatch $miniBatch --wvecDim $wvecDim
