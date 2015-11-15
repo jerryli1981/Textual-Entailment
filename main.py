@@ -112,8 +112,8 @@ def load_data_matrix(data, args, seq_len=36, n_children=6, unfinished_flag=-2):
 def load_data(data, wordEmbeddings, args, maxlen=36):
 
     
-    X1 = np.zeros((len(data), maxlen, args.wvecDim), dtype=np.float32)
-    X2 = np.zeros((len(data), maxlen, args.wvecDim), dtype=np.float32)
+    X1 = np.zeros((len(data), 1, maxlen, args.wvecDim), dtype=np.float32)
+    X2 = np.zeros((len(data), 1, maxlen, args.wvecDim), dtype=np.float32)
 
     Y_scores = np.zeros((len(data)), dtype=np.float32)
 
@@ -121,10 +121,10 @@ def load_data(data, wordEmbeddings, args, maxlen=36):
     for i, (label, score, l_tree, r_tree) in enumerate(data):
 
         for j, Node in enumerate(l_tree.nodes):
-            X1[i, j] =  wordEmbeddings[:, Node.index]
+            X1[i, 0, j] =  wordEmbeddings[:, Node.index]
 
         for k, Node in enumerate(r_tree.nodes):
-            X2[i, k] =  wordEmbeddings[:, Node.index]
+            X2[i, 0, k] =  wordEmbeddings[:, Node.index]
 
         Y_scores[i] = score
         Y_labels[i] = label
@@ -154,30 +154,41 @@ def build_network(args, input1_var=None, input2_var=None, maxlen=36):
 
     """
 
-    l1_in = lasagne.layers.InputLayer(shape=(None, maxlen, args.wvecDim),
+    l1_in = lasagne.layers.InputLayer(shape=(None, 1, maxlen, args.wvecDim),
                                      input_var=input1_var)
 
-    l2_in = lasagne.layers.InputLayer(shape=(None, maxlen, args.wvecDim),
+    l2_in = lasagne.layers.InputLayer(shape=(None, 1, maxlen, args.wvecDim),
                                      input_var=input2_var)
 
+    """
     GRAD_CLIP = args.wvecDim/2
     l_forward_1 = lasagne.layers.LSTMLayer(
         l1_in, args.wvecDim, grad_clipping=GRAD_CLIP,
         nonlinearity=lasagne.nonlinearities.tanh)
 
+
     l_forward_2 = lasagne.layers.LSTMLayer(
         l2_in, args.wvecDim, grad_clipping=GRAD_CLIP,
         nonlinearity=lasagne.nonlinearities.tanh)
+    """
 
-    l12_mul = lasagne.layers.ElemwiseMergeLayer([l_forward_1, l_forward_2], merge_function=T.mul)
-    l12_sub = lasagne.layers.ElemwiseMergeLayer([l_forward_1, l_forward_2], merge_function=T.sub)
+    l12_mul = lasagne.layers.ElemwiseMergeLayer([l1_in, l2_in], merge_function=T.mul)
+    l12_sub = lasagne.layers.ElemwiseMergeLayer([l1_in, l2_in], merge_function=T.sub)
     l12_sub = lasagne.layers.AbsLayer(l12_sub)
 
-    l12_mul_Dense = lasagne.layers.DenseLayer(l12_mul, num_units=args.hiddenDim, nonlinearity=None, b=None)
+    #l12_mul_Dense = lasagne.layers.DenseLayer(l12_mul, num_units=args.hiddenDim, nonlinearity=None, b=None)
 
-    l12_sub_Dense = lasagne.layers.DenseLayer(l12_sub, num_units=args.hiddenDim, nonlinearity=None, b=None)
+    #l12_sub_Dense = lasagne.layers.DenseLayer(l12_sub, num_units=args.hiddenDim, nonlinearity=None, b=None)
 
-    joined = lasagne.layers.ElemwiseSumLayer([l12_mul_Dense, l12_sub_Dense])
+    joined = lasagne.layers.ElemwiseSumLayer([l12_mul, l12_sub])
+
+
+    con2D = lasagne.layers.Conv2DLayer(
+            joined, num_filters=32, filter_size=(5, 5),
+            nonlinearity=lasagne.nonlinearities.rectify)
+
+    maxPool = lasagne.layers.MaxPool2DLayer(con2D, pool_size=(2, 2))
+
 
     if args.mlpActivation == "sigmoid":
         act_fun = lasagne.nonlinearities.sigmoid
@@ -186,12 +197,12 @@ def build_network(args, input1_var=None, input2_var=None, maxlen=36):
     else:
         raise "Need set mlp activation correctly"
 
-    l_hid1 = lasagne.layers.NonlinearityLayer(joined, nonlinearity=act_fun)
+    l_hid1 = lasagne.layers.NonlinearityLayer(maxPool, nonlinearity=act_fun)
 
-    l_hid1_drop = lasagne.layers.DropoutLayer(l_hid1, p=0.5)
+    #l_hid1_drop = lasagne.layers.DropoutLayer(l_hid1, p=0.5)
 
     l_out = lasagne.layers.DenseLayer(
-            l_hid1_drop, num_units=args.numLabels,
+            l_hid1, num_units=args.numLabels,
             nonlinearity=lasagne.nonlinearities.softmax)
 
     return l_out
@@ -242,8 +253,8 @@ if __name__ == '__main__':
     X1_test, X2_test, Y_labels_test, Y_scores_test = load_data(testTrees, wordEmbeddings, args)
 
     # Prepare Theano variables for inputs and targets
-    input1_var = T.ftensor3('inputs_1')
-    input2_var = T.ftensor3('inputs_2')
+    input1_var = T.tensor4('inputs_1')
+    input2_var = T.tensor4('inputs_2')
     target_var = T.ivector('targets')
 
     # Create neural network model (depending on first command line parameter)
