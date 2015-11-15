@@ -131,9 +131,9 @@ def load_data(data, wordEmbeddings, args, maxlen=36):
         
     return X1, X2, Y_labels, Y_scores
 
-def build_network_0(args, input1_var=None, input2_var=None, maxlen=36):
+def build_network(args, input1_var=None, input2_var=None, maxlen=36):
 
-    print("Building model 0 and compiling functions...")
+    print("Building model and compiling functions...")
 
     """
     1. for each sentence, first do LSTM
@@ -178,74 +178,20 @@ def build_network_0(args, input1_var=None, input2_var=None, maxlen=36):
     l12_sub_Dense = lasagne.layers.DenseLayer(l12_sub, num_units=args.hiddenDim, nonlinearity=None, b=None)
 
     joined = lasagne.layers.ElemwiseSumLayer([l12_mul_Dense, l12_sub_Dense])
-    l_hid1 = lasagne.layers.NonlinearityLayer(joined, nonlinearity=lasagne.nonlinearities.rectify)
+
+    if args.mlpActivation == "sigmoid":
+        act_fun = lasagne.nonlinearities.sigmoid
+    elif args.mlpActivation == "rectify":
+        act_fun = lasagne.nonlinearities.rectify
+    else:
+        raise "Need set mlp activation correctly"
+        
+    l_hid1 = lasagne.layers.NonlinearityLayer(joined, nonlinearity=act_fun)
 
     l_hid1_drop = lasagne.layers.DropoutLayer(l_hid1, p=0.5)
 
     l_out = lasagne.layers.DenseLayer(
             l_hid1_drop, num_units=args.numLabels,
-            nonlinearity=lasagne.nonlinearities.softmax)
-
-    return l_out
-
-def build_network_1(args, input1_var=None, input2_var=None, maxlen=30):
-
-    print("Building model 1 and compiling functions...")
-
-    """
-    1. for each sentence, first do LSTM
-    sent_1: (None, maxlen, wvecDim)
-    sent_2: (None, maxlen, wvecDim)
-
-    2. Do multiply and abs_sub, and then mean pooling over maxlen.
-    mul: (None, wvecDim)
-    sub: (None, wvecDim)
-
-    3. hs= sigmoid(W1 * mul + W2* sub)
-
-    4. pred = softmax(W*hs + b)
-
-    """
-
-    l_in_1 = lasagne.layers.InputLayer(shape=(None, maxlen, args.wvecDim),
-                                     input_var=input1_var)
-
-    l_in_2 = lasagne.layers.InputLayer(shape=(None, maxlen, args.wvecDim),
-                                     input_var=input2_var)
-
-    GRAD_CLIP = args.wvecDim/2
-    l_lstm_1 = lasagne.layers.LSTMLayer(
-        l_in_1, args.wvecDim, grad_clipping=GRAD_CLIP,
-        nonlinearity=lasagne.nonlinearities.tanh)
-
-    #l_forward_1 = lasagne.layers.FeaturePoolLayer(l_forward_1,pool_size=4, pool_function=T.mean)
-
-
-    l_lstm_2 = lasagne.layers.LSTMLayer(
-        l_in_2, args.wvecDim, grad_clipping=GRAD_CLIP,
-        nonlinearity=lasagne.nonlinearities.tanh)
-
-    #l_forward_2 = lasagne.layers.FeaturePoolLayer(l_forward_2,pool_size=4, pool_function=T.mean)
-
-
-    l_mul = lasagne.layers.ElemwiseMergeLayer([l_lstm_1, l_lstm_2], merge_function=T.mul)
-    l_mul= lasagne.layers.GlobalPoolLayer(l_mul)
-
-
-    l_sub = lasagne.layers.AbsLayer(lasagne.layers.ElemwiseMergeLayer([l_lstm_1, l_lstm_2], merge_function=T.sub))
-    l_sub = lasagne.layers.GlobalPoolLayer(l_sub)
-
-    
-    l_mul_Dense = lasagne.layers.DenseLayer(l_mul, num_units=args.hiddenDim, nonlinearity=None, b=None)
-    l_sub_Dense = lasagne.layers.DenseLayer(l_sub, num_units=args.hiddenDim, nonlinearity=None, b=None)
-    
-
-    l_sum = lasagne.layers.ElemwiseSumLayer([l_mul_Dense, l_sub_Dense])
-    l_hid = lasagne.layers.NonlinearityLayer(l_sum, nonlinearity=lasagne.nonlinearities.sigmoid)
-
-
-    l_out = lasagne.layers.DenseLayer(
-            l_hid, num_units=args.outputDim,
             nonlinearity=lasagne.nonlinearities.softmax)
 
     return l_out
@@ -279,6 +225,7 @@ if __name__ == '__main__':
     parser.add_argument("--wvecDim",dest="wvecDim",type=int,default=30)
     parser.add_argument("--outFile",dest="outFile",type=str, default="models/test.bin")
     parser.add_argument("--repModel",dest="repModel",type=str,default="lstm")
+    parser.add_argument("--mlpActivation",dest="mlpActivation",type=str,default="sigmoid")
     args = parser.parse_args()
          
     trainTrees = tr.loadTrees("train")
@@ -301,7 +248,7 @@ if __name__ == '__main__':
     target_var = T.ivector('targets')
 
     # Create neural network model (depending on first command line parameter)
-    network = build_network_0(args, input1_var, input2_var)
+    network = build_network(args, input1_var, input2_var)
 
     # Create a loss expression for training, i.e., a scalar objective we want
     # to minimize (for our multi-class problem, it is the cross-entropy loss):
@@ -318,7 +265,7 @@ if __name__ == '__main__':
     #updates = lasagne.updates.nesterov_momentum(
             #loss, params, learning_rate=0.01, momentum=0.9)
 
-    updates = lasagne.updates.adagrad(loss, params, 0.01)
+    updates = lasagne.updates.adagrad(loss, params, args.step)
     # Create a loss expression for validation/testing. The crucial difference
     # here is that we do a deterministic forward pass through the network,
     # disabling dropout layers.
@@ -339,6 +286,7 @@ if __name__ == '__main__':
     # Finally, launch the training loop.
     print("Starting training...")
     # We iterate over epochs:
+    best_val_acc = 0
     for epoch in range(args.epochs):
         # In each epoch, we do a full pass over the training data:
         train_err = 0
@@ -367,8 +315,11 @@ if __name__ == '__main__':
         print("  training loss:\t\t{:.6f}".format(train_err / train_batches))
         print("  validation loss:\t\t{:.6f}".format(val_err / val_batches))
 
-        print("  validation accuracy:\t\t{:.2f} %".format(
-            val_acc / val_batches * 100))
+
+        val_score = val_acc / val_batches * 100
+        print("  validation accuracy:\t\t{:.2f} %".format(val_score))
+        if best_val_acc < val_score:
+            best_val_acc = val_score
 
     # After training, we compute and print the test error:
     test_err = 0
@@ -381,8 +332,11 @@ if __name__ == '__main__':
         test_acc += acc
         test_batches += 1
 
+
+
     print("Final results:")
     print("  test loss:\t\t\t{:.6f}".format(test_err / test_batches))
+    print("  Best validate accuracy:\t\t{:.2f} %".format(best_val_acc))
     print("  test accuracy:\t\t{:.2f} %".format(
         test_acc / test_batches * 100))
 
