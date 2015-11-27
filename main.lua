@@ -1,17 +1,22 @@
-require 'Vocab'
-require 'read_data'
-require 'Tree'
-
-printf = utils.printf
+require 'init' 
 
 --local dbg = require 'debugger'
 
+-- Pearson correlation
+function pearson(x, y)
+  x = x - x:mean()
+  y = y - y:mean()
+  return x:dot(y) / (x:norm() * y:norm())
+end
+
 
 local args = lapp [[
-Training script for text entailment on the SICK dataset.
-	-d, --dim (default 150) LSTM memeory dimension
-	-e, --epochs (default 10) Number of training epochs 
- ]]
+Training script for semantic relatedness prediction on the SICK dataset.
+  -m,--model  (default dependency) Model architecture: [dependency, constituency, lstm, bilstm]
+  -l,--layers (default 1)          Number of layers (ignored for Tree-LSTM)
+  -d,--dim    (default 150)        LSTM memory dimension
+  -e,--epochs (default 10)         Number of training epochs
+]]
 
 
 local data_dir = 'data/sick/'
@@ -53,7 +58,41 @@ printf('num dev = %d\n', dev_dataset.size)
 printf('num test = %d\n', test_dataset.size)
 
 
+-- initialize model
+local model = TreeLSTMSim{
+  emb_vecs   = vecs,
+  num_layers = args.layers,
+  mem_dim    = args.dim,
+}
 
+-- number of epochs to train
+local num_epochs = args.epochs
 
+-- print information
+header('model configuration')
+printf('max epochs = %d\n', num_epochs)
+model:print_config()
 
+-- train
+local train_start = sys.clock()
+local best_dev_score = -1.0
+local best_dev_model = model
+header('Training model')
+for i = 1, num_epochs do
+  local start = sys.clock()
+  printf('-- epoch %d\n', i)
+  model:train(train_dataset)
+  printf('-- finished epoch in %.2fs\n', sys.clock() - start)
 
+  -- uncomment to compute train scores
+  --[[
+  local train_predictions = model:predict_dataset(train_dataset)
+  local train_score = pearson(train_predictions, train_dataset.labels)
+  printf('-- train score: %.4f\n', train_score)
+  --]]
+
+  local dev_predictions = model:predict_dataset(dev_dataset)
+  local dev_score = pearson(dev_predictions, dev_dataset.labels)
+  printf('-- dev score: %.4f\n', dev_score)
+end
+printf('finished training in %.2fs\n', sys.clock() - train_start)
