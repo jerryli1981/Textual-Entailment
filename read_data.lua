@@ -109,6 +109,7 @@ function read_tree(parents, labels)
 end
 
 function read_dataset(dir, vocab)
+  local labelMap = {NEUTRAL=3, CONTRADICTION=1, ENTAILMENT=2}
   local dataset = {}
   dataset.vocab = vocab
   dataset.ltrees = read_trees(dir .. 'a.parents')
@@ -119,14 +120,18 @@ function read_dataset(dir, vocab)
   dataset.size = #dataset.ltrees
   local id_file = torch.DiskFile(dir .. 'id.txt')
   local sim_file = torch.DiskFile(dir .. 'sim.txt')
+  local label_file = io.open(dir .. 'label.txt', 'r')
   dataset.ids = torch.IntTensor(dataset.size)
+  dataset.scores = torch.Tensor(dataset.size)
   dataset.labels = torch.Tensor(dataset.size)
   for i = 1, dataset.size do
     dataset.ids[i] = id_file:readInt()
-    dataset.labels[i] = 0.25 * (sim_file:readDouble() - 1)
+    --dataset.scores[i] = 0.25 * (sim_file:readDouble() - 1)
+    dataset.labels[i] = labelMap[label_file:read()]
   end
   id_file:close()
   sim_file:close()
+  label_file:close()
   return dataset
 end
 

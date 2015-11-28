@@ -14,14 +14,14 @@ function TreeLSTMSim:__init(config)
   self.emb = nn.LookupTable(config.emb_vecs:size(1), self.emb_dim)
   self.emb.weight:copy(config.emb_vecs)
 
-  -- number of similarity rating classes
-  self.num_classes = 5
+  self.num_classes = 3
 
   -- optimizer configuration
   self.optim_state = { learningRate = self.learning_rate }
 
   -- KL divergence optimization objective
-  self.criterion = nn.DistKLDivCriterion()
+  --self.criterion = nn.DistKLDivCriterion()
+  self.criterion = nn.ClassNLLCriterion()
 
   -- initialize tree-lstm model
   local treelstm_config = {
@@ -65,21 +65,8 @@ function TreeLSTMSim:train(dataset)
   local indices = torch.randperm(dataset.size)
   local zeros = torch.zeros(self.mem_dim)
   for i = 1, dataset.size, self.batch_size do
-    xlua.progress(i, dataset.size)
+    --xlua.progress(i, dataset.size)
     local batch_size = math.min(i + self.batch_size - 1, dataset.size) - i + 1
-
-    -- get target distributions for batch
-    local targets = torch.zeros(batch_size, self.num_classes)
-    for j = 1, batch_size do
-      local sim = dataset.labels[indices[i + j - 1]] * (self.num_classes - 1) + 1
-      local ceil, floor = math.ceil(sim), math.floor(sim)
-      if ceil == floor then
-        targets[{j, floor}] = 1
-      else
-        targets[{j, floor}] = ceil - sim
-        targets[{j, ceil}] = sim - floor
-      end
-    end
 
     local feval = function(x)
       self.grad_params:zero()
@@ -89,6 +76,7 @@ function TreeLSTMSim:train(dataset)
         local idx = indices[i + j - 1]
         local ltree, rtree = dataset.ltrees[idx], dataset.rtrees[idx]
         local lsent, rsent = dataset.lsents[idx], dataset.rsents[idx]
+        local ent = dataset.labels[idx]
         self.emb:forward(lsent)
         local linputs = torch.Tensor(self.emb.output:size()):copy(self.emb.output)
         local rinputs = self.emb:forward(rsent)
@@ -101,9 +89,9 @@ function TreeLSTMSim:train(dataset)
         local output = self.sim_module:forward{lrep, rrep}
 
         -- compute loss and backpropagate
-        local example_loss = self.criterion:forward(output, targets[j])
+        local example_loss = self.criterion:forward(output, ent)
         loss = loss + example_loss
-        local sim_grad = self.criterion:backward(output, targets[j])
+        local sim_grad = self.criterion:backward(output, ent)
         local rep_grad = self.sim_module:backward({lrep, rrep}, sim_grad)
         local linput_grads = self.treelstm:backward(dataset.ltrees[idx], linputs, {zeros, rep_grad[1]})
         local rinput_grads = self.treelstm:backward(dataset.rtrees[idx], rinputs, {zeros, rep_grad[2]})
@@ -124,7 +112,7 @@ function TreeLSTMSim:train(dataset)
 
     optim.adagrad(feval, self.params, self.optim_state)
   end
-  xlua.progress(dataset.size, dataset.size)
+  --xlua.progress(dataset.size, dataset.size)
 end
 
 -- Predict the similarity of a sentence pair.
@@ -136,15 +124,15 @@ function TreeLSTMSim:predict(ltree, rtree, lsent, rsent)
   local output = self.sim_module:forward{lrep, rrep}
   self.treelstm:clean(ltree)
   self.treelstm:clean(rtree)
-  return torch.range(1, 5):dot(output:exp())
+  return output
 end
 
 -- Produce similarity predictions for each sentence pair in the dataset.
 function TreeLSTMSim:predict_dataset(dataset)
   self.treelstm:evaluate()
-  local predictions = torch.Tensor(dataset.size)
+  local predictions = torch.Tensor(dataset.size, self.num_classes)
   for i = 1, dataset.size do
-    xlua.progress(i, dataset.size)
+    --xlua.progress(i, dataset.size)
     local ltree, rtree = dataset.ltrees[i], dataset.rtrees[i]
     local lsent, rsent = dataset.lsents[i], dataset.rsents[i]
     predictions[i] = self:predict(ltree, rtree, lsent, rsent)
