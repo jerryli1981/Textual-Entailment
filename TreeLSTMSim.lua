@@ -65,7 +65,7 @@ function TreeLSTMSim:train(dataset)
   local indices = torch.randperm(dataset.size)
   local zeros = torch.zeros(self.mem_dim)
   for i = 1, dataset.size, self.batch_size do
-    --xlua.progress(i, dataset.size)
+    xlua.progress(i, dataset.size)
     local batch_size = math.min(i + self.batch_size - 1, dataset.size) - i + 1
 
     local feval = function(x)
@@ -112,7 +112,7 @@ function TreeLSTMSim:train(dataset)
 
     optim.adagrad(feval, self.params, self.optim_state)
   end
-  --xlua.progress(dataset.size, dataset.size)
+  xlua.progress(dataset.size, dataset.size)
 end
 
 -- Predict the similarity of a sentence pair.
@@ -132,7 +132,7 @@ function TreeLSTMSim:predict_dataset(dataset)
   self.treelstm:evaluate()
   local predictions = torch.Tensor(dataset.size, self.num_classes)
   for i = 1, dataset.size do
-    --xlua.progress(i, dataset.size)
+    xlua.progress(i, dataset.size)
     local ltree, rtree = dataset.ltrees[i], dataset.rtrees[i]
     local lsent, rsent = dataset.lsents[i], dataset.rsents[i]
     predictions[i] = self:predict(ltree, rtree, lsent, rsent)
