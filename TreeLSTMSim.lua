@@ -62,6 +62,54 @@ function TreeLSTMSim:new_sim_module()
   return sim_module
 end
 
+
+function TreeLSTMSim:new_sim_module_CNN()
+  -- length = length of sentences/words (zero padded to be of same length)
+  -- input_size = embedding_size
+  -- feature_maps = table of feature maps (for each kernel width)
+  -- kernels = table of kernel widths
+  length = 36
+  input_size = 36
+  feature_maps = {50,100}
+  kernels = {3,4}
+
+  local layer1_concat, output
+  local input = nn.Identity()() --input is batch_size x length x input_size
+  
+  local layer1 = {}
+  for i = 1, #kernels do
+    local reduced_l = length - kernels[i] + 1 
+    local pool_layer
+    
+    local conv = nn.TemporalConvolution(input_size, feature_maps[i], kernels[i])
+    local conv_layer = conv(input) 
+    pool_layer = nn.TemporalMaxPooling(reduced_l)(nn.Tanh()(conv_layer))
+    pool_layer = nn.Squeeze()(pool_layer)
+
+    table.insert(layer1, pool_layer)
+  end
+
+  if #kernels > 1 then
+    layer1_concat = nn.JoinTable(2)(layer1)
+    output = layer1_concat
+  else
+    output = layer1[1]
+  end
+
+  local vecs_to_input
+  vecs_to_input = nn.gModule({input}, {output})
+
+   -- define similarity model architecture
+  local sim_module = nn.Sequential()
+    :add(vecs_to_input)
+    :add(nn.Linear(2 * self.mem_dim+1, self.sim_nhidden))
+    :add(nn.Sigmoid())    -- does better than tanh
+    :add(nn.Linear(self.sim_nhidden, self.num_classes))
+    :add(nn.LogSoftMax())
+  return sim_module
+
+end
+
 function TreeLSTMSim:train(dataset)
   self.treelstm:training()
   local indices = torch.randperm(dataset.size)
@@ -84,11 +132,26 @@ function TreeLSTMSim:train(dataset)
         local rinputs = self.emb:forward(rsent)
 
         -- get sentence representations
-        local lrep = self.treelstm:forward(ltree, linputs)[2]
-        local rrep = self.treelstm:forward(rtree, rinputs)[2]
+        all_states_l={}        
+        local root_l= self.treelstm:forward(ltree, linputs, all_states_l)[2]
+        root_l = nn.Reshape(1, self.mem_dim):forward(root_l)
+        table.insert(all_states_l, root_l)
+        matrix_l = nn.JoinTable(1):forward(all_states_l)
+
+        all_states_r={}        
+        local root_r= self.treelstm:forward(rtree, rinputs, all_states_r)[2]
+        root_r = nn.Reshape(1, self.mem_dim):forward(root_r)
+        table.insert(all_states_r, root_r)
+        matrix_r = nn.JoinTable(1):forward(all_states_r)
+        
+        local output = self.sim_module:forward{matrix_l, matrix_r}
+  
+        --local lrep = self.treelstm:forward(ltree, linputs)[2]
+        --local rrep = self.treelstm:forward(rtree, rinputs)[2]
+        
 
         -- compute relatedness
-        local output = self.sim_module:forward{lrep, rrep}
+        --local output = self.sim_module:forward{lrep, rrep}
 
         -- compute loss and backpropagate
         local example_loss = self.criterion:forward(output, ent)

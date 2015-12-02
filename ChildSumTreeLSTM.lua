@@ -73,13 +73,17 @@ function ChildSumTreeLSTM:new_output_module()
   return output_module
 end
 
-function ChildSumTreeLSTM:forward(tree, inputs)
+function ChildSumTreeLSTM:forward(tree, inputs, all_states)
   local loss = 0
   for i = 1, tree.num_children do
-    local _, child_loss = self:forward(tree.children[i], inputs)
+    local child_state, child_loss= self:forward(tree.children[i], inputs, all_states)
     loss = loss + child_loss
+    c_s = child_state[2]
+    r_c_s = nn.Reshape(1,self.mem_dim):forward(c_s)
+    table.insert(all_states, r_c_s)
   end
   local child_c, child_h = self:get_child_states(tree)
+
   self:allocate_module(tree, 'composer')
   tree.state = tree.composer:forward{inputs[tree.idx], child_c, child_h}
 

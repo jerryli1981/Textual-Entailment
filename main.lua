@@ -5,7 +5,7 @@ local args = lapp [[
 Training script for semantic relatedness prediction on the SICK dataset.
   -m,--model  (default dependency) Model architecture: [dependency, constituency, lstm, bilstm]
   -l,--layers (default 1)          Number of layers (ignored for Tree-LSTM)
-  -d,--dim    (default 150)        LSTM memory dimension
+  -d,--dim    (default 10)        LSTM memory dimension
   -e,--epochs (default 10)         Number of training epochs
   -g,--debug  (default nil)        debug setting    
 ]]
