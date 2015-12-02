@@ -143,6 +143,8 @@ function ChildSumTreeLSTM:parameters()
     tablex.insertvalues(grad_params, og)
   end
   return params, grad_params
+
+  
 end
 
 function ChildSumTreeLSTM:get_child_states(tree)
