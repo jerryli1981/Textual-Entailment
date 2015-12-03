@@ -34,7 +34,8 @@ function TreeLSTMSim:__init(config)
   self.treelstm = ChildSumTreeLSTM(treelstm_config)
 
   -- similarity model
-  self.sim_module = self:new_sim_module()
+  self.sim_module = self:new_sim_module_CNN()
+  
   local modules = nn.Parallel()
     :add(self.treelstm)
     :add(self.sim_module)
@@ -64,45 +65,17 @@ end
 
 
 function TreeLSTMSim:new_sim_module_CNN()
-  -- length = length of sentences/words (zero padded to be of same length)
-  -- input_size = embedding_size
-  -- feature_maps = table of feature maps (for each kernel width)
-  -- kernels = table of kernel widths
-  length = 36
-  input_size = 36
-  feature_maps = {50,100}
-  kernels = {3,4}
-
-  local layer1_concat, output
-  local input = nn.Identity()() --input is batch_size x length x input_size
-  
-  local layer1 = {}
-  for i = 1, #kernels do
-    local reduced_l = length - kernels[i] + 1 
-    local pool_layer
-    
-    local conv = nn.TemporalConvolution(input_size, feature_maps[i], kernels[i])
-    local conv_layer = conv(input) 
-    pool_layer = nn.TemporalMaxPooling(reduced_l)(nn.Tanh()(conv_layer))
-    pool_layer = nn.Squeeze()(pool_layer)
-
-    table.insert(layer1, pool_layer)
-  end
-
-  if #kernels > 1 then
-    layer1_concat = nn.JoinTable(2)(layer1)
-    output = layer1_concat
-  else
-    output = layer1[1]
-  end
-
-  local vecs_to_input
-  vecs_to_input = nn.gModule({input}, {output})
+  local seq_length = 36
+  local outputFrameSize = 10
+  local kernel_width = 3
+  local reduced_l = seq_length - kernel_width + 1 
 
    -- define similarity model architecture
   local sim_module = nn.Sequential()
-    :add(vecs_to_input)
-    :add(nn.Linear(2 * self.mem_dim+1, self.sim_nhidden))
+    :add(nn.TemporalConvolution(seq_length, outputFrameSize, kernel_width))--34 * 10
+    :add(nn.Tanh())
+    :add(nn.TemporalMaxPooling(reduced_l)) --1*10
+    :add(nn.Linear(10, self.sim_nhidden))
     :add(nn.Sigmoid())    -- does better than tanh
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
@@ -136,15 +109,39 @@ function TreeLSTMSim:train(dataset)
         local root_l= self.treelstm:forward(ltree, linputs, all_states_l)[2]
         root_l = nn.Reshape(1, self.mem_dim):forward(root_l)
         table.insert(all_states_l, root_l)
+        
+        if ltree:size() < 36 then
+          for i = 1, 36-ltree:size() do
+            table.insert(all_states_l, i, torch.Tensor(1, self.mem_dim):zero())
+          end
+        end  
         matrix_l = nn.JoinTable(1):forward(all_states_l)
 
         all_states_r={}        
         local root_r= self.treelstm:forward(rtree, rinputs, all_states_r)[2]
         root_r = nn.Reshape(1, self.mem_dim):forward(root_r)
         table.insert(all_states_r, root_r)
+        if rtree:size() < 36 then
+          for i = 1, 36-rtree:size() do
+            table.insert(all_states_r, i, torch.Tensor(1, self.mem_dim):zero())
+          end
+        end        
         matrix_r = nn.JoinTable(1):forward(all_states_r)
+
+        sim_matrix = torch.Tensor(36,36)
+        for i =1, 36 do
+            vec_l = matrix_l[i]
+          for j=1, 36 do
+            vec_r = matrix_r[j]
+            sim_val = nn.CosineDistance():forward{vec_l, vec_r}
+
+            sim_matrix[i][j] = sim_val
+          end
+        end
         
-        local output = self.sim_module:forward{matrix_l, matrix_r}
+        local output = self.sim_module:forward{sim_matrix}
+
+        dbg() 
   
         --local lrep = self.treelstm:forward(ltree, linputs)[2]
         --local rrep = self.treelstm:forward(rtree, rinputs)[2]
