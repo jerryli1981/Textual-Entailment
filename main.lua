@@ -3,8 +3,7 @@ require 'init'
 
 local args = lapp [[
 Training script for semantic relatedness prediction on the SICK dataset.
-  -m,--model  (default dependency) Model architecture: [dependency, constituency, lstm, bilstm]
-  -l,--layers (default 1)          Number of layers (ignored for Tree-LSTM)
+  -m,--model  (default treeLSTM) Model architecture: [treeLSTM, seqLSTM]
   -d,--dim    (default 10)        LSTM memory dimension
   -e,--epochs (default 10)         Number of training epochs
   -g,--debug  (default nil)        debug setting    
@@ -56,9 +55,14 @@ printf('num test = %d\n', test_dataset.size)
 
 --A one-table-param function call needs no parens:
 -- initialize model
-local model = TreeLSTMSim{
+if args.model == "treeLSTM" then
+  model_class = TreeLSTMSim
+elseif args.model == "seqLSTM" then
+  model_class = LSTMSim
+end
+
+local model = model_class{
   emb_vecs   = vecs,
-  num_layers = args.layers,
   mem_dim    = args.dim,
 }
 
@@ -85,13 +89,6 @@ for i = 1, num_epochs do
   model:train(train_dataset)
   printf('-- finished epoch in %.2fs\n', sys.clock() - start)
 
-  -- uncomment to compute train scores
-  --[[
-  local train_predictions = model:predict_dataset(train_dataset)
-  local train_score = pearson(train_predictions, train_dataset.labels)
-  printf('-- train score: %.4f\n', train_score)
-  --]]
-
   local dev_predictions = model:predict_dataset(dev_dataset)
 
   confusion:batchAdd(dev_predictions, dev_dataset.labels)
@@ -99,4 +96,5 @@ for i = 1, num_epochs do
   dev_score = confusion.totalValid * 100
   printf('--dev_accuracy: %.4f\n', dev_score)
 end
+
 printf('finished training in %.2fs\n', sys.clock() - train_start)

@@ -14,7 +14,8 @@ include('CRowAddTable.lua')
 include('TreeLSTM.lua')
 include('ChildSumTreeLSTM.lua')
 include('TreeLSTMSim.lua')
-
+include('LSTM.lua')
+include('LSTMSim.lua')
 
 torch.setnumthreads(8)
 

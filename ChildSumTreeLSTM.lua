@@ -73,7 +73,27 @@ function ChildSumTreeLSTM:new_output_module()
   return output_module
 end
 
-function ChildSumTreeLSTM:forward(tree, inputs, all_states)
+function ChildSumTreeLSTM:forward(tree, inputs)
+  local loss = 0
+  for i = 1, tree.num_children do
+    local _, child_loss = self:forward(tree.children[i], inputs)
+    loss = loss + child_loss
+  end
+  local child_c, child_h = self:get_child_states(tree)
+  self:allocate_module(tree, 'composer')
+  tree.state = tree.composer:forward{inputs[tree.idx], child_c, child_h}
+
+  if self.output_module ~= nil then
+    self:allocate_module(tree, 'output_module')
+    tree.output = tree.output_module:forward(tree.state[2])
+    if self.train and tree.gold_label ~= nil then
+      loss = loss + self.criterion:forward(tree.output, tree.gold_label)
+    end
+  end
+  return tree.state, loss
+end
+
+function ChildSumTreeLSTM:forward_CNN(tree, inputs, all_states)
   local loss = 0
   for i = 1, tree.num_children do
     local child_state, child_loss= self:forward(tree.children[i], inputs, all_states)
