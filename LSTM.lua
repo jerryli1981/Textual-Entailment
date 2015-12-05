@@ -9,7 +9,7 @@ function LSTM:__init(config)
 	self.mem_dim = config.mem_dim or 150
 
 
-	self.master_cell = self:new_cell()
+	self.master_cell = localize(self:new_cell())
 
 	self.cells = {}
 
@@ -17,10 +17,10 @@ function LSTM:__init(config)
 
 	local ctable_init, ctable_grad, htable_init, htable_grad
 
-	ctable_init = torch.zeros(self.mem_dim)
-	ctable_grad = torch.zeros(self.mem_dim)
-	htable_init = torch.zeros(self.mem_dim)
-	htable_grad = torch.zeros(self.mem_dim)
+	ctable_init = localize(torch.zeros(self.mem_dim))
+	ctable_grad = localize(torch.zeros(self.mem_dim))
+	htable_init = localize(torch.zeros(self.mem_dim))
+	htable_grad = localize(torch.zeros(self.mem_dim))
 
 	self.initial_values = {ctable_init, htable_init}
 
@@ -68,7 +68,7 @@ end
 --Returns the final hidden state of the LSTM ?
 function LSTM:forward(inputs, reverse)
 	local size = inputs:size(1)
-	self.output = torch.Tensor(36, self.mem_dim):zero()
+	self.output = localize(torch.Tensor(36, self.mem_dim):zero())
 	for t = 1, size do
 		local input = reverse and inputs[size-t+1] or inputs[t]
 		self.depth = self.depth +1
@@ -101,7 +101,7 @@ function LSTM:backward(inputs, grad_outputs, reverse)
 		error("No cells to backpropagate through")
 	end
 
-	local input_grads = torch.Tensor(inputs:size())
+	local input_grads = localize(torch.Tensor(inputs:size()))
 
 	for t = size, 1, -1 do
 		local input = reverse and inputs[size -t + 1] or inputs[t]

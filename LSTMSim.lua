@@ -102,7 +102,7 @@ function LSTMSim:new_sim_module_complex()
     :add(nn.Sigmoid())    -- does better than tanh
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
-  return sim_module
+  return localize(sim_module)
 
 end
 
@@ -126,8 +126,8 @@ function LSTMSim:train(dataset)
         local ent = dataset.labels[idx]
         seq_len = 36
 
-        local linputs = self.emb_vecs:index(1, lsent:long()):double()
-        local rinputs = self.emb_vecs:index(1, rsent:long()):double()
+        local linputs = localize(self.emb_vecs:index(1, lsent:long()):double())
+        local rinputs = localize(self.emb_vecs:index(1, rsent:long()):double())
 
         local inputs = {self.llstm:forward(linputs), self.rlstm:forward(rinputs)}
         local output = self.sim_module:forward(inputs)

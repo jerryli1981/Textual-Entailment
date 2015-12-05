@@ -7,6 +7,7 @@ require('sys')
 require('lfs')
 
 
+
 include('read_data.lua')
 include('Tree.lua')
 include('Vocab.lua')

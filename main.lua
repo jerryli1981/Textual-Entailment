@@ -6,11 +6,21 @@ Training script for semantic relatedness prediction on the SICK dataset.
   -m,--model  (default treeLSTM) Model architecture: [treeLSTM, seqLSTM]
   -d,--dim    (default 10)        LSTM memory dimension
   -e,--epochs (default 10)         Number of training epochs
-  -g,--debug  (default nil)        debug setting    
+  -g,--debug  (default nil)        debug setting   
+  -c,--cuda   (default nil)       cuda setting
 ]]
 
 if args.debug == 'dbg' then
 	dbg = require('debugger')
+end
+
+
+localize = function(thing)
+  if args.cuda == 'gpu' then
+    require('cutorch')
+    return thing:cuda()
+  end
+  return thing
 end
 
 
@@ -24,7 +34,7 @@ local emb_dim = emb_vecs:size(2)
 
 local num_unk=0
 
-local vecs = torch.Tensor(vocab.size, emb_dim)
+local vecs = localize(torch.Tensor(vocab.size, emb_dim))
 --dbg()
 for i = 1, vocab.size do
 	local w = vocab:token(i)
