@@ -72,9 +72,9 @@ function LSTMSim:new_sim_module_complex()
 
   --local k = 1
   local sim_mat = {}
-  for i=1, 36 do
+  for i=27, 36 do
     local lvec = nn.SelectTable(i)(lmat_s)
-    for j=1, 36 do
+    for j=27, 36 do
       local rvec = nn.SelectTable(j)(rmat_s)
       local cosine_dist = nn.CosineDistance(){lvec, rvec}
       table.insert(sim_mat, cosine_dist)
@@ -83,14 +83,14 @@ function LSTMSim:new_sim_module_complex()
 
   sim_mat = nn.Identity()(sim_mat)
   sim_mat_j = nn.JoinTable(1){sim_mat}
-  sim_mat_r = nn.Reshape(36,36){sim_mat_j}
+  sim_mat_r = nn.Reshape(10,10){sim_mat_j}
 
   vecs_to_input = nn.gModule({lmat, rmat}, {sim_mat_r})
 
-  local inputFrameSize = 36
+  local inputFrameSize = 10
   local outputFrameSize = 20
   local kernel_width = 3
-  local reduced_l = 36 - kernel_width + 1 
+  local reduced_l = 10 - kernel_width + 1 
 
    -- define similarity model architecture
   local sim_module = nn.Sequential()
