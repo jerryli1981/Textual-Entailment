@@ -32,7 +32,7 @@ function LSTMSim:__init(config)
   self.rlstm = LSTM(lstm_config)
 
   -- similarity model
-  self.sim_module = self:new_sim_module()
+  self.sim_module = self:new_sim_module_complex()
 
   local modules = nn.Parallel()
     :add(self.llstm)
@@ -62,6 +62,50 @@ function LSTMSim:new_sim_module()
   return sim_module
 end
 
+function LSTMSim:new_sim_module_complex()
+  local vecs_to_input
+
+  local lmat = nn.Identity()()
+  local lmat_s = nn.SplitTable(1)(lmat)
+  local rmat = nn.Identity()()
+  local rmat_s = nn.SplitTable(1)(rmat)
+
+  --local k = 1
+  local sim_mat = {}
+  for i=1, 36 do
+    local lvec = nn.SelectTable(i)(lmat_s)
+    for j=1, 36 do
+      local rvec = nn.SelectTable(j)(rmat_s)
+      local cosine_dist = nn.CosineDistance(){lvec, rvec}
+      table.insert(sim_mat, cosine_dist)
+    end
+  end
+
+  sim_mat = nn.Identity()(sim_mat)
+  sim_mat_j = nn.JoinTable(1){sim_mat}
+  sim_mat_r = nn.Reshape(36,36){sim_mat_j}
+
+  vecs_to_input = nn.gModule({lmat, rmat}, {sim_mat_r})
+
+  local inputFrameSize = 36
+  local outputFrameSize = 20
+  local kernel_width = 3
+  local reduced_l = 36 - kernel_width + 1 
+
+   -- define similarity model architecture
+  local sim_module = nn.Sequential()
+    :add(vecs_to_input)
+    :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kernel_width))--(36-kw+1, outputFrameSize) 
+    :add(nn.Tanh())
+    :add(nn.TemporalMaxPooling(reduced_l)) --(1, outputFrameSize)
+    :add(nn.Linear(outputFrameSize, self.sim_nhidden))
+    :add(nn.Sigmoid())    -- does better than tanh
+    :add(nn.Linear(self.sim_nhidden, self.num_classes))
+    :add(nn.LogSoftMax())
+  return sim_module
+
+end
+
 
 function LSTMSim:train(dataset)
   self.llstm:training()
@@ -80,24 +124,27 @@ function LSTMSim:train(dataset)
         local idx = indices[i + j - 1]
         local lsent, rsent = dataset.lsents[idx], dataset.rsents[idx]
         local ent = dataset.labels[idx]
+        seq_len = 36
 
         local linputs = self.emb_vecs:index(1, lsent:long()):double()
         local rinputs = self.emb_vecs:index(1, rsent:long()):double()
 
         local inputs = {self.llstm:forward(linputs), self.rlstm:forward(rinputs)}
-
         local output = self.sim_module:forward(inputs)
-      
+
+        
         -- compute loss and backpropagate
         local example_loss = self.criterion:forward(output, ent)
         loss = loss + example_loss
         local sim_grad = self.criterion:backward(output, ent)
         local rep_grad = self.sim_module:backward(inputs, sim_grad)
 
-        local lgrad = torch.zeros(lsent:nElement(), self.mem_dim)
-        local rgrad = torch.zeros(rsent:nElement(), self.mem_dim)
-        lgrad[lsent:nElement()] = rep_grad[1]
-        rgrad[rsent:nElement()] = rep_grad[2]
+        local lgrad = torch.zeros(seq_len, self.mem_dim)
+        local rgrad = torch.zeros(seq_len, self.mem_dim)
+        --lgrad[seq_len] = rep_grad[1]
+        --rgrad[seq_len] = rep_grad[2]
+        lgrad = rep_grad[1]
+        rgrad = rep_grad[2]
 
         self.llstm:backward(linputs, lgrad)
         self.rlstm:backward(rinputs, rgrad)
