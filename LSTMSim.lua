@@ -7,6 +7,7 @@ function LSTMSim:__init(config)
   self.reg           = config.reg           or 1e-4
   self.sim_nhidden   = config.sim_nhidden   or 50
 
+
   -- word embedding
   self.emb_dim = config.emb_vecs:size(2)
   self.emb_vecs = config.emb_vecs
@@ -30,9 +31,7 @@ function LSTMSim:__init(config)
 
   self.llstm = LSTM(lstm_config)
   self.rlstm = LSTM(lstm_config)
-
-  -- similarity model
-  self.sim_module = self:new_sim_module_complex()
+  self.sim_module = self:new_sim_module()
 
   local modules = nn.Parallel()
     :add(self.llstm)
@@ -48,7 +47,6 @@ function LSTMSim:new_sim_module()
   local rvec = nn.Identity()()
   local mult_dist = nn.CMulTable(){lvec, rvec}
   local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
-  local cosine_dist = nn.CosineDistance(){lvec, rvec}
   local vec_dist_feats = nn.JoinTable(1){mult_dist, add_dist}
   vecs_to_input = nn.gModule({lvec, rvec}, {vec_dist_feats})
 
@@ -88,7 +86,7 @@ function LSTMSim:new_sim_module_complex()
   vecs_to_input = nn.gModule({lmat, rmat}, {sim_mat_r})
 
   local inputFrameSize = 10
-  local outputFrameSize = 20
+  local outputFrameSize = 10
   local kernel_width = 3
   local reduced_l = 10 - kernel_width + 1 
 
@@ -125,8 +123,6 @@ function LSTMSim:train(dataset)
         local lsent, rsent = dataset.lsents[idx], dataset.rsents[idx]
         local ent = dataset.labels[idx]
 
-        seq_len = 36
-
         local linputs = self.emb_vecs:index(1, lsent:long()):double()
         local rinputs = self.emb_vecs:index(1, rsent:long()):double()
 
@@ -138,11 +134,17 @@ function LSTMSim:train(dataset)
         local example_loss = self.criterion:forward(output, ent)
 
         loss = loss + example_loss
+
         local sim_grad = self.criterion:backward(output, ent)
         local rep_grad = self.sim_module:backward(inputs, sim_grad)
 
-        self.llstm:backward(linputs, rep_grad[1])
-        self.rlstm:backward(rinputs, rep_grad[2])
+        lgrad = torch.zeros(lsent:nElement(), self.mem_dim)
+        rgrad = torch.zeros(rsent:nElement(), self.mem_dim)
+        lgrad[lsent:nElement()] = rep_grad[1]
+        rgrad[rsent:nElement()] = rep_grad[2]
+
+        self.llstm:backward(linputs, lgrad)
+        self.rlstm:backward(rinputs, rgrad)
 
       end
 

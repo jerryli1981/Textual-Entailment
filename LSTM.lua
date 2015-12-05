@@ -68,7 +68,7 @@ end
 --Returns the final hidden state of the LSTM ?
 function LSTM:forward(inputs, reverse)
 	local size = inputs:size(1)
-	self.output = torch.Tensor(36, self.mem_dim):zero()
+	self.output = torch.Tensor(size, self.mem_dim):zero()
 	for t = 1, size do
 		local input = reverse and inputs[size-t+1] or inputs[t]
 		self.depth = self.depth +1
@@ -88,7 +88,8 @@ function LSTM:forward(inputs, reverse)
 
 		local outputs = cell:forward({input, prev_output[1], prev_output[2]})
 		local cell, hidden = unpack(outputs)
-		self.output[t + 36 -size] = hidden
+		--self.output[t + 36 -size] = hidden
+		self.output=hidden
 	end
 
 	return self.output
@@ -105,8 +106,8 @@ function LSTM:backward(inputs, grad_outputs, reverse)
 
 	for t = size, 1, -1 do
 		local input = reverse and inputs[size -t + 1] or inputs[t]
-		local grad_output = reverse and grad_outputs[size -t + 1] or grad_outputs[t+ 36 -size]
-
+		--local grad_output = reverse and grad_outputs[size -t + 1] or grad_outputs[t+ 36 -size]
+		local grad_output = reverse and grad_outputs[size -t + 1] or grad_outputs[t]
 		local cell = self.cells[self.depth]
 		local grads = {self.gradInput[2], grad_output}
 
