@@ -31,7 +31,7 @@ function LSTMSim:__init(config)
 
   self.llstm = LSTM(lstm_config)
   self.rlstm = LSTM(lstm_config)
-  self.sim_module = self:new_sim_module()
+  self.sim_module = self:new_sim_module_complex()
 
   local modules = nn.Parallel()
     :add(self.llstm)
@@ -140,8 +140,9 @@ function LSTMSim:train(dataset)
 
         lgrad = torch.zeros(lsent:nElement(), self.mem_dim)
         rgrad = torch.zeros(rsent:nElement(), self.mem_dim)
-        lgrad[lsent:nElement()] = rep_grad[1]
-        rgrad[rsent:nElement()] = rep_grad[2]
+        lgrad[lsent:nElement()] = rep_grad[1][-1]
+        rgrad[rsent:nElement()] = rep_grad[2][-1]
+
 
         self.llstm:backward(linputs, lgrad)
         self.rlstm:backward(rinputs, rgrad)
