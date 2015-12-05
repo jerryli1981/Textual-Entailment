@@ -14,16 +14,6 @@ if args.debug == 'dbg' then
 	dbg = require('debugger')
 end
 
-
-localize = function(thing)
-  if args.cuda == 'gpu' then
-    require('cutorch')
-    return thing:cuda()
-  end
-  return thing
-end
-
-
 local data_dir = 'data/sick/'
 local vocab = Vocab(data_dir .. 'vocab-cased.txt')
 
@@ -34,7 +24,7 @@ local emb_dim = emb_vecs:size(2)
 
 local num_unk=0
 
-local vecs = localize(torch.Tensor(vocab.size, emb_dim))
+local vecs = torch.Tensor(vocab.size, emb_dim)
 --dbg()
 for i = 1, vocab.size do
 	local w = vocab:token(i)

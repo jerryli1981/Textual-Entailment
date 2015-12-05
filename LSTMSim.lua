@@ -102,7 +102,7 @@ function LSTMSim:new_sim_module_complex()
     :add(nn.Sigmoid())    -- does better than tanh
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
-  return localize(sim_module)
+  return sim_module
 
 end
 
@@ -111,7 +111,7 @@ function LSTMSim:train(dataset)
   self.llstm:training()
   self.rlstm:training()
   local indices = torch.randperm(dataset.size)
-  local zeros = torch.zeros(self.mem_dim)
+
   for i = 1, dataset.size, self.batch_size do
     xlua.progress(i, dataset.size)
     local batch_size = math.min(i + self.batch_size - 1, dataset.size) - i + 1
@@ -124,10 +124,11 @@ function LSTMSim:train(dataset)
         local idx = indices[i + j - 1]
         local lsent, rsent = dataset.lsents[idx], dataset.rsents[idx]
         local ent = dataset.labels[idx]
+
         seq_len = 36
 
-        local linputs = localize(self.emb_vecs:index(1, lsent:long()):double())
-        local rinputs = localize(self.emb_vecs:index(1, rsent:long()):double())
+        local linputs = self.emb_vecs:index(1, lsent:long()):double()
+        local rinputs = self.emb_vecs:index(1, rsent:long()):double()
 
         local inputs = {self.llstm:forward(linputs), self.rlstm:forward(rinputs)}
         local output = self.sim_module:forward(inputs)
@@ -135,19 +136,13 @@ function LSTMSim:train(dataset)
         
         -- compute loss and backpropagate
         local example_loss = self.criterion:forward(output, ent)
+
         loss = loss + example_loss
         local sim_grad = self.criterion:backward(output, ent)
         local rep_grad = self.sim_module:backward(inputs, sim_grad)
 
-        local lgrad = torch.zeros(seq_len, self.mem_dim)
-        local rgrad = torch.zeros(seq_len, self.mem_dim)
-        --lgrad[seq_len] = rep_grad[1]
-        --rgrad[seq_len] = rep_grad[2]
-        lgrad = rep_grad[1]
-        rgrad = rep_grad[2]
-
-        self.llstm:backward(linputs, lgrad)
-        self.rlstm:backward(rinputs, rgrad)
+        self.llstm:backward(linputs, rep_grad[1])
+        self.rlstm:backward(rinputs, rep_grad[2])
 
       end
 
