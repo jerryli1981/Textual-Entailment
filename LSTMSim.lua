@@ -207,6 +207,7 @@ function LSTMSim:train(dataset)
             self.rlstm_b:forward(rinputs, true)
           }
         end
+        dbg()
 
         local output = self.sim_module:forward(inputs)
   

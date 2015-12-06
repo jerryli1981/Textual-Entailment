@@ -6,7 +6,7 @@ Training script for semantic relatedness prediction on the SICK dataset.
   -m,--model  (default treeLSTM)  Model architecture: [treeLSTM, seqLSTM]
   -d,--dim    (default 10)        LSTM memory dimension
   -e,--epochs (default 10)        Number of training epochs
-  -l,--layer (default 1)          Number of layers
+  -l,--num_layers (default 1)          Number of layers
   -s,--structure (default lstm)   lstm structure
   -g,--debug  (default nil)       debug setting   
 
@@ -105,7 +105,7 @@ for i = 1, num_epochs do
     best_dev_model = model_class{
       emb_vecs = vecs,
       structure = args.structure,
-      num_layers = args.layers,
+      num_layers = args.num_layers,
       mem_dim    = args.dim,
     }
     best_dev_model.params:copy(model.params)
