@@ -341,5 +341,7 @@ function LSTMSim:print_config()
   printf('%-25s = %.2e\n', 'regularization strength', self.reg)
   printf('%-25s = %d\n',   'minibatch size', self.batch_size)
   printf('%-25s = %.2e\n', 'learning rate', self.learning_rate)
+  printf('%-25s = %s\n',   'LSTM structure', self.structure)
+  printf('%-25s = %d\n',   'LSTM layers', self.num_layers)
   printf('%-25s = %d\n',   'sim module hidden dim', self.sim_nhidden)
 end

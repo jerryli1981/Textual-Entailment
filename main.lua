@@ -85,7 +85,7 @@ confusion = optim.ConfusionMatrix(classes)
 -- train
 local train_start = sys.clock()
 local best_dev_score = -1.0
-
+local best_dev_model = model
 header('Training model')
 for i = 1, num_epochs do
   local start = sys.clock()
@@ -99,6 +99,27 @@ for i = 1, num_epochs do
   confusion:updateValids()
   dev_score = confusion.totalValid * 100
   printf('--dev_accuracy: %.4f\n', dev_score)
+
+  if dev_score > best_dev_score then
+    best_dev_score = dev_score
+    best_dev_model = model_class{
+      emb_vecs = vecs,
+      structure = args.structure,
+      num_layers = args.layers,
+      mem_dim    = args.dim,
+    }
+    best_dev_model.params:copy(model.params)
+  end
+
 end
 
 printf('finished training in %.2fs\n', sys.clock() - train_start)
+
+-- evaluate
+header('Evaluating on test set')
+printf('-- using model with dev score = %.4f\n', best_dev_score)
+local test_predictions = best_dev_model:predict_dataset(test_dataset)
+confusion:batchAdd(test_predictions, test_dataset.labels)
+confusion:updateValids()
+test_score = confusion.totalValid * 100
+printf('-- test score: %.4f\n', test_score)
