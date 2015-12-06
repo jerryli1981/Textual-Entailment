@@ -41,9 +41,7 @@ function LSTMSim:__init(config)
     error('invalid LSTM type: ' .. self.structure)
   end
 
-
-
-  self.sim_module = self:new_sim_module()
+  self.sim_module = self:new_sim_module_complex()
 
   local modules = nn.Parallel()
     :add(self.llstm)
@@ -88,8 +86,6 @@ function LSTMSim:new_sim_module()
     inputs = {lf, lb, rf, rb}
   end
 
-
-
   local mult_dist = nn.CMulTable(){lvec, rvec}
   local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
   local vec_dist_feats = nn.JoinTable(1){mult_dist, add_dist}
@@ -107,45 +103,73 @@ end
 
 function LSTMSim:new_sim_module_complex()
 
-  local lvec, rvec, inputs, input_dim
+  local lmat, rmat, inputs
+
   if self.structure == 'lstm' then
-    -- standard (left-to-right) LSTM
-    input_dim = 2 * self.num_layers * self.mem_dim
+
     local linput, rinput = nn.Identity()(), nn.Identity()()
-    if self.num_layers == 1 then
-      lvec, rvec = linput, rinput
-    else
-      lvec, rvec = nn.JoinTable(1)(linput), nn.JoinTable(1)(rinput)
+    
+    local linput_r,rinput_r = {},{}
+    for i=1, self.num_layers do
+
+      l_i_vec = nn.SelectTable(i)(linput)
+      l_i_vec = nn.Reshape(1, self.mem_dim)(l_i_vec)
+      linput_r[i] = l_i_vec
+
+      r_i_vec = nn.SelectTable(i)(rinput)
+      r_i_vec = nn.Reshape(1, self.mem_dim)(r_i_vec)
+      rinput_r[i] = r_i_vec
     end
+
+    lmat, rmat = nn.JoinTable(1)(linput_r), nn.JoinTable(1)(rinput_r)
     inputs = {linput, rinput}
+
   elseif self.structure == 'bilstm' then
-    -- bidirectional LSTM
-    input_dim = 4 * self.num_layers * self.mem_dim
+
     local lf, lb, rf, rb = nn.Identity()(), nn.Identity()(), nn.Identity()(), nn.Identity()()
-    if self.num_layers == 1 then
-      lvec = nn.JoinTable(1){lf, lb}
-      rvec = nn.JoinTable(1){rf, rb}
-    else
-      -- in the multilayer case, each input is a table of hidden vectors (one for each layer)
-      lvec = nn.JoinTable(1){nn.JoinTable(1)(lf), nn.JoinTable(1)(lb)}
-      rvec = nn.JoinTable(1){nn.JoinTable(1)(rf), nn.JoinTable(1)(rb)}
+
+    local lf_r, lb_r, rf_r, rb_r = {},{},{},{}
+    for i=1, self.num_layers do
+
+      lf_i_vec = nn.SelectTable(i)(lf)
+      lf_i_vec = nn.Reshape(1, self.mem_dim)(lf_i_vec)
+      lf_r[i] = lf_i_vec
+
+      lb_i_vec = nn.SelectTable(i)(lb)
+      lb_i_vec = nn.Reshape(1, self.mem_dim)(lb_i_vec)
+      lb_r[i] = lb_i_vec
+
+      rf_i_vec = nn.SelectTable(i)(rf)
+      rf_i_vec = nn.Reshape(1, self.mem_dim)(rf_i_vec)
+      rf_r[i] = rf_i_vec
+
+      rb_i_vec = nn.SelectTable(i)(rb)
+      rb_i_vec = nn.Reshape(1, self.mem_dim)(rb_i_vec)
+      rb_r[i] = rb_i_vec
     end
+
+    lf_mat = nn.JoinTable(1)(lf_r)
+    lb_mat = nn.JoinTable(1)(lb_r)
+
+    lmat = nn.JoinTable(1){lf_mat, lb_mat}
+
+    rf_mat = nn.JoinTable(1)(rf_r)
+    rb_mat = nn.JoinTable(1)(rb_r)
+    rmat = nn.JoinTable(1){rf_mat, rb_mat}
     inputs = {lf, lb, rf, rb}
   end
 
-  local vecs_to_input
+  local img_h = self.num_layers
+  local img_w = self.mem_dim
 
-  local lmat = nn.Identity()()
-  local lmat_s = nn.SplitTable(1)(lmat)
-  local rmat = nn.Identity()()
-  local rmat_s = nn.SplitTable(1)(rmat)
+  --local lmat_s = nn.SplitTable(1)(lmat)
+  --local rmat_s = nn.SplitTable(1)(rmat)
 
-  min_length = 10
-
+  --[[
   local cos_mat = {}
-  for i=-1, -min_length, -1 do
+  for i=1, seq_length do
     local lvec = nn.SelectTable(i)(lmat_s)
-    for j=-1, -min_length, -1 do
+    for j=1, seq_length do
       local rvec = nn.SelectTable(j)(rmat_s)
       local cosine_dist = nn.CosineDistance(){lvec, rvec}
       table.insert(cos_mat, cosine_dist)
@@ -154,12 +178,14 @@ function LSTMSim:new_sim_module_complex()
 
   cos_mat = nn.Identity()(cos_mat)
   cos_mat = nn.JoinTable(1){cos_mat}
-  cos_mat = nn.Reshape(1, min_length,min_length){cos_mat}
+  cos_mat = nn.Reshape(seq_length*seq_length){cos_mat}
+  --]]
 
+  --[[
   local p_mat = {}
-  for i=-1, -min_length, -1 do
+  for i=1, seq_length do
     local lvec = nn.SelectTable(i)(lmat_s)
-    for j=-1, -min_length, -1 do
+    for j=1, seq_length do
       local rvec = nn.SelectTable(j)(rmat_s)
       local p_dist = nn.DotProduct(){lvec, rvec}
       table.insert(p_mat, p_dist)
@@ -168,28 +194,48 @@ function LSTMSim:new_sim_module_complex()
 
   p_mat = nn.Identity()(p_mat)
   p_mat = nn.JoinTable(1){p_mat}
-  p_mat = nn.Reshape(1, min_length,min_length){p_mat}
+  p_mat = nn.Reshape(seq_length*seq_length){p_mat}
+  --]]
 
-  merge_mat = nn.JoinTable(1){cos_mat, p_mat}
-  merge_mat = nn.Reshape(2, 10, 10){merge_mat}
+  --merge_mat = nn.JoinTable(1){cos_mat, p_mat}
+  --out_mat = nn.Reshape(2, seq_length, seq_length){merge_mat}
 
-  vecs_to_input = nn.gModule({lmat, rmat}, {merge_mat})
+  local mult_dist = nn.CMulTable(){lmat, rmat}
 
-  local inputFrameSize = min_length
-  local outputFrameSize = min_length
-  local kernel_width = 3
-  local reduced_l = min_length - kernel_width + 1 
+  local add_dist = nn.Abs()(nn.CSubTable(){lmat, rmat})
 
-   -- define similarity model architecture
+  local out_mat = nn.JoinTable(1){mult_dist, add_dist}
+
+  out_mat = nn.Reshape(4, img_h, img_w){out_mat}
+
+  --out_mat = nn.Reshape(2*seq_length*2*self.mem_dim){out_mat}
+
+  vecs_to_input = nn.gModule(inputs, {out_mat})
+
+  local conv_kw = img_w
+  local conv_kh = 2
+  local n_input_plane = 4
+  local n_output_plane = 4
+  local pool_kw = 1
+  local pool_kh = 2
+
+  local cov_out_h = img_h - conv_kh + 1
+  local cov_out_w = img_w - conv_kw + 1
+  local pool_out_h = cov_out_h - pool_kh + 1
+  local pool_out_w = cov_out_w -pool_kw + 1
+
+  local mlp_input_dim = n_output_plane*pool_out_h*pool_out_w
+
+  --local mlp_input_dim = img_h*4*img_w
+
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
-    :add(nn.SpatialConvolution(2, 2, 4, 10))--(36-kw+1, outputFrameSize) 
+    :add(nn.SpatialConvolution(n_input_plane, n_output_plane, conv_kw, conv_kh))
     :add(nn.Tanh())
-    :add(nn.SpatialMaxPooling(2,1)) --(1, outputFrameSize)
-    :add(nn.Reshape(2*3))
-    :add(nn.Linear(2*3, self.sim_nhidden))
-    --:add(nn.Linear(10, self.sim_nhidden))
-    :add(nn.Sigmoid())    -- does better than tanh
+    :add(nn.SpatialMaxPooling(pool_kw, pool_kh, 1, 1))
+    :add(nn.Reshape(mlp_input_dim))
+    :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
+    :add(nn.Sigmoid())
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
   return sim_module
@@ -239,6 +285,7 @@ function LSTMSim:train(dataset)
         end
 
         local output = self.sim_module:forward(inputs)
+        --dbg()
   
         -- compute loss and backpropagate
         local example_loss = self.criterion:forward(output, ent)
