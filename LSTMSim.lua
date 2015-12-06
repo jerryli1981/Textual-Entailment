@@ -87,6 +87,9 @@ function LSTMSim:new_sim_module()
     end
     inputs = {lf, lb, rf, rb}
   end
+
+
+
   local mult_dist = nn.CMulTable(){lvec, rvec}
   local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
   local vec_dist_feats = nn.JoinTable(1){mult_dist, add_dist}
@@ -103,6 +106,33 @@ function LSTMSim:new_sim_module()
 end
 
 function LSTMSim:new_sim_module_complex()
+
+  local lvec, rvec, inputs, input_dim
+  if self.structure == 'lstm' then
+    -- standard (left-to-right) LSTM
+    input_dim = 2 * self.num_layers * self.mem_dim
+    local linput, rinput = nn.Identity()(), nn.Identity()()
+    if self.num_layers == 1 then
+      lvec, rvec = linput, rinput
+    else
+      lvec, rvec = nn.JoinTable(1)(linput), nn.JoinTable(1)(rinput)
+    end
+    inputs = {linput, rinput}
+  elseif self.structure == 'bilstm' then
+    -- bidirectional LSTM
+    input_dim = 4 * self.num_layers * self.mem_dim
+    local lf, lb, rf, rb = nn.Identity()(), nn.Identity()(), nn.Identity()(), nn.Identity()()
+    if self.num_layers == 1 then
+      lvec = nn.JoinTable(1){lf, lb}
+      rvec = nn.JoinTable(1){rf, rb}
+    else
+      -- in the multilayer case, each input is a table of hidden vectors (one for each layer)
+      lvec = nn.JoinTable(1){nn.JoinTable(1)(lf), nn.JoinTable(1)(lb)}
+      rvec = nn.JoinTable(1){nn.JoinTable(1)(rf), nn.JoinTable(1)(rb)}
+    end
+    inputs = {lf, lb, rf, rb}
+  end
+
   local vecs_to_input
 
   local lmat = nn.Identity()()
@@ -207,7 +237,6 @@ function LSTMSim:train(dataset)
             self.rlstm_b:forward(rinputs, true)
           }
         end
-        dbg()
 
         local output = self.sim_module:forward(inputs)
   
