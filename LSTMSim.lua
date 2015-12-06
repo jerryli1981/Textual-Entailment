@@ -6,6 +6,8 @@ function LSTMSim:__init(config)
   self.batch_size    = config.batch_size    or 25
   self.reg           = config.reg           or 1e-4
   self.sim_nhidden   = config.sim_nhidden   or 50
+  self.structure     = config.structure     or 'lstm'
+  self.num_layers    = config.num_layers    or 1
 
 
   -- word embedding
@@ -17,43 +19,83 @@ function LSTMSim:__init(config)
   -- optimizer configuration
   self.optim_state = { learningRate = self.learning_rate }
 
-  -- KL divergence optimization objective
-  --self.criterion = nn.DistKLDivCriterion()
   self.criterion = nn.ClassNLLCriterion()
 
   -- initialize lstm model
   local lstm_config = {
     in_dim = self.emb_dim,
     mem_dim = self.mem_dim,
-    gate_output = false,
+    num_layers = self.num_layers,
   }
   
 
-  self.llstm = LSTM(lstm_config)
-  self.rlstm = LSTM(lstm_config)
-  self.sim_module = self:new_sim_module_complex()
+  if self.structure == 'lstm' then
+    self.llstm = LSTM(lstm_config) -- "left" LSTM
+    self.rlstm = LSTM(lstm_config) -- "right" LSTM
+  elseif self.structure == 'bilstm' then
+    self.llstm = LSTM(lstm_config)
+    self.llstm_b = LSTM(lstm_config) -- backward "left" LSTM
+    self.rlstm = LSTM(lstm_config)
+    self.rlstm_b = LSTM(lstm_config) -- backward "right" LSTM
+  else
+    error('invalid LSTM type: ' .. self.structure)
+  end
+
+
+
+  self.sim_module = self:new_sim_module()
 
   local modules = nn.Parallel()
     :add(self.llstm)
     :add(self.sim_module)
+
   self.params, self.grad_params = modules:getParameters()
 
+  -- share must only be called after getParameters, since this changes the
+  -- location of the parameters
   share_params(self.rlstm, self.llstm)
+  if self.structure == 'bilstm' then
+    -- tying the forward and backward weights improves performance
+    share_params(self.llstm_b, self.llstm)
+    share_params(self.rlstm_b, self.llstm)
+  end
 end
 
 function LSTMSim:new_sim_module()
-  local vecs_to_input
-  local lvec = nn.Identity()()
-  local rvec = nn.Identity()()
+  local lvec, rvec, inputs, input_dim
+  if self.structure == 'lstm' then
+    -- standard (left-to-right) LSTM
+    input_dim = 2 * self.num_layers * self.mem_dim
+    local linput, rinput = nn.Identity()(), nn.Identity()()
+    if self.num_layers == 1 then
+      lvec, rvec = linput, rinput
+    else
+      lvec, rvec = nn.JoinTable(1)(linput), nn.JoinTable(1)(rinput)
+    end
+    inputs = {linput, rinput}
+  elseif self.structure == 'bilstm' then
+    -- bidirectional LSTM
+    input_dim = 4 * self.num_layers * self.mem_dim
+    local lf, lb, rf, rb = nn.Identity()(), nn.Identity()(), nn.Identity()(), nn.Identity()()
+    if self.num_layers == 1 then
+      lvec = nn.JoinTable(1){lf, lb}
+      rvec = nn.JoinTable(1){rf, rb}
+    else
+      -- in the multilayer case, each input is a table of hidden vectors (one for each layer)
+      lvec = nn.JoinTable(1){nn.JoinTable(1)(lf), nn.JoinTable(1)(lb)}
+      rvec = nn.JoinTable(1){nn.JoinTable(1)(rf), nn.JoinTable(1)(rb)}
+    end
+    inputs = {lf, lb, rf, rb}
+  end
   local mult_dist = nn.CMulTable(){lvec, rvec}
   local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
   local vec_dist_feats = nn.JoinTable(1){mult_dist, add_dist}
-  vecs_to_input = nn.gModule({lvec, rvec}, {vec_dist_feats})
+  local vecs_to_input = nn.gModule(inputs, {vec_dist_feats})
 
    -- define similarity model architecture
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
-    :add(nn.Linear(2 * self.mem_dim, self.sim_nhidden))
+    :add(nn.Linear(input_dim, self.sim_nhidden))
     :add(nn.Sigmoid())    -- does better than tanh
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
@@ -68,35 +110,55 @@ function LSTMSim:new_sim_module_complex()
   local rmat = nn.Identity()()
   local rmat_s = nn.SplitTable(1)(rmat)
 
-  --local k = 1
-  local sim_mat = {}
-  for i=27, 36 do
+  min_length = 10
+
+  local cos_mat = {}
+  for i=-1, -min_length, -1 do
     local lvec = nn.SelectTable(i)(lmat_s)
-    for j=27, 36 do
+    for j=-1, -min_length, -1 do
       local rvec = nn.SelectTable(j)(rmat_s)
       local cosine_dist = nn.CosineDistance(){lvec, rvec}
-      table.insert(sim_mat, cosine_dist)
+      table.insert(cos_mat, cosine_dist)
     end
   end
 
-  sim_mat = nn.Identity()(sim_mat)
-  sim_mat_j = nn.JoinTable(1){sim_mat}
-  sim_mat_r = nn.Reshape(10,10){sim_mat_j}
+  cos_mat = nn.Identity()(cos_mat)
+  cos_mat = nn.JoinTable(1){cos_mat}
+  cos_mat = nn.Reshape(1, min_length,min_length){cos_mat}
 
-  vecs_to_input = nn.gModule({lmat, rmat}, {sim_mat_r})
+  local p_mat = {}
+  for i=-1, -min_length, -1 do
+    local lvec = nn.SelectTable(i)(lmat_s)
+    for j=-1, -min_length, -1 do
+      local rvec = nn.SelectTable(j)(rmat_s)
+      local p_dist = nn.DotProduct(){lvec, rvec}
+      table.insert(p_mat, p_dist)
+    end
+  end
 
-  local inputFrameSize = 10
-  local outputFrameSize = 10
+  p_mat = nn.Identity()(p_mat)
+  p_mat = nn.JoinTable(1){p_mat}
+  p_mat = nn.Reshape(1, min_length,min_length){p_mat}
+
+  merge_mat = nn.JoinTable(1){cos_mat, p_mat}
+  merge_mat = nn.Reshape(2, 10, 10){merge_mat}
+
+  vecs_to_input = nn.gModule({lmat, rmat}, {merge_mat})
+
+  local inputFrameSize = min_length
+  local outputFrameSize = min_length
   local kernel_width = 3
-  local reduced_l = 10 - kernel_width + 1 
+  local reduced_l = min_length - kernel_width + 1 
 
    -- define similarity model architecture
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
-    :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kernel_width))--(36-kw+1, outputFrameSize) 
+    :add(nn.SpatialConvolution(2, 2, 4, 10))--(36-kw+1, outputFrameSize) 
     :add(nn.Tanh())
-    :add(nn.TemporalMaxPooling(reduced_l)) --(1, outputFrameSize)
-    :add(nn.Linear(outputFrameSize, self.sim_nhidden))
+    :add(nn.SpatialMaxPooling(2,1)) --(1, outputFrameSize)
+    :add(nn.Reshape(2*3))
+    :add(nn.Linear(2*3, self.sim_nhidden))
+    --:add(nn.Linear(10, self.sim_nhidden))
     :add(nn.Sigmoid())    -- does better than tanh
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
@@ -106,8 +168,15 @@ end
 
 
 function LSTMSim:train(dataset)
+
   self.llstm:training()
   self.rlstm:training()
+
+  if self.structure == 'bilstm' then
+    self.llstm_b:training()
+    self.rlstm_b:training()
+  end
+
   local indices = torch.randperm(dataset.size)
 
   for i = 1, dataset.size, self.batch_size do
@@ -126,10 +195,21 @@ function LSTMSim:train(dataset)
         local linputs = self.emb_vecs:index(1, lsent:long()):double()
         local rinputs = self.emb_vecs:index(1, rsent:long()):double()
 
-        local inputs = {self.llstm:forward(linputs), self.rlstm:forward(rinputs)}
-        local output = self.sim_module:forward(inputs)
+         -- get sentence representations
+        local inputs
+        if self.structure == 'lstm' then
+          inputs = {self.llstm:forward(linputs), self.rlstm:forward(rinputs)}
+        elseif self.structure == 'bilstm' then
+          inputs = {
+            self.llstm:forward(linputs),
+            self.llstm_b:forward(linputs, true), -- true => reverse
+            self.rlstm:forward(rinputs),
+            self.rlstm_b:forward(rinputs, true)
+          }
+        end
 
-        
+        local output = self.sim_module:forward(inputs)
+  
         -- compute loss and backpropagate
         local example_loss = self.criterion:forward(output, ent)
 
@@ -138,14 +218,11 @@ function LSTMSim:train(dataset)
         local sim_grad = self.criterion:backward(output, ent)
         local rep_grad = self.sim_module:backward(inputs, sim_grad)
 
-        lgrad = torch.zeros(lsent:nElement(), self.mem_dim)
-        rgrad = torch.zeros(rsent:nElement(), self.mem_dim)
-        lgrad[lsent:nElement()] = rep_grad[1][-1]
-        rgrad[rsent:nElement()] = rep_grad[2][-1]
-
-
-        self.llstm:backward(linputs, lgrad)
-        self.rlstm:backward(rinputs, rgrad)
+        if self.structure == 'lstm' then
+          self:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
+        elseif self.structure == 'bilstm' then
+          self:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
+        end
 
       end
 
@@ -163,19 +240,82 @@ function LSTMSim:train(dataset)
   xlua.progress(dataset.size, dataset.size)
 end
 
+-- LSTM backward propagation
+function LSTMSim:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
+  local lgrad, rgrad
+  if self.num_layers == 1 then
+    lgrad = torch.zeros(lsent:nElement(), self.mem_dim)
+    rgrad = torch.zeros(rsent:nElement(), self.mem_dim)
+    lgrad[lsent:nElement()] = rep_grad[1]
+    rgrad[rsent:nElement()] = rep_grad[2]
+  else
+    lgrad = torch.zeros(lsent:nElement(), self.num_layers, self.mem_dim)
+    rgrad = torch.zeros(rsent:nElement(), self.num_layers, self.mem_dim)
+    for l = 1, self.num_layers do
+      lgrad[{lsent:nElement(), l, {}}] = rep_grad[1][l]
+      rgrad[{rsent:nElement(), l, {}}] = rep_grad[2][l]
+    end
+  end
+  self.llstm:backward(linputs, lgrad)
+  self.rlstm:backward(rinputs, rgrad)
+end
+
+-- Bidirectional LSTM backward propagation
+function LSTMSim:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
+  local lgrad, lgrad_b, rgrad, rgrad_b
+  if self.num_layers == 1 then
+    lgrad   = torch.zeros(lsent:nElement(), self.mem_dim)
+    lgrad_b = torch.zeros(lsent:nElement(), self.mem_dim)
+    rgrad   = torch.zeros(rsent:nElement(), self.mem_dim)
+    rgrad_b = torch.zeros(rsent:nElement(), self.mem_dim)
+    lgrad[lsent:nElement()] = rep_grad[1]
+    rgrad[rsent:nElement()] = rep_grad[3]
+    lgrad_b[1] = rep_grad[2]
+    rgrad_b[1] = rep_grad[4]
+  else
+    lgrad   = torch.zeros(lsent:nElement(), self.num_layers, self.mem_dim)
+    lgrad_b = torch.zeros(lsent:nElement(), self.num_layers, self.mem_dim)
+    rgrad   = torch.zeros(rsent:nElement(), self.num_layers, self.mem_dim)
+    rgrad_b = torch.zeros(rsent:nElement(), self.num_layers, self.mem_dim)
+    for l = 1, self.num_layers do
+      lgrad[{lsent:nElement(), l, {}}] = rep_grad[1][l]
+      rgrad[{rsent:nElement(), l, {}}] = rep_grad[3][l]
+      lgrad_b[{1, l, {}}] = rep_grad[2][l]
+      rgrad_b[{1, l, {}}] = rep_grad[4][l]
+    end
+  end
+  self.llstm:backward(linputs, lgrad)
+  self.llstm_b:backward(linputs, lgrad_b, true)
+  self.rlstm:backward(rinputs, rgrad)
+  self.rlstm_b:backward(rinputs, rgrad_b, true)
+end
+
 -- Predict the similarity of a sentence pair.
 function LSTMSim:predict(lsent, rsent)
   self.llstm:evaluate()
   self.rlstm:evaluate()
-
   local linputs = self.emb_vecs:index(1, lsent:long()):double()
   local rinputs = self.emb_vecs:index(1, rsent:long()):double()
-  local inputs = {self.llstm:forward(linputs), self.rlstm:forward(rinputs)}
-
+  local inputs
+  if self.structure == 'lstm' then
+    inputs = {self.llstm:forward(linputs), self.rlstm:forward(rinputs)}
+  elseif self.structure == 'bilstm' then
+    self.llstm_b:evaluate()
+    self.rlstm_b:evaluate()
+    inputs = {
+      self.llstm:forward(linputs),
+      self.llstm_b:forward(linputs, true),
+      self.rlstm:forward(rinputs),
+      self.rlstm_b:forward(rinputs, true)
+    }
+  end
   local output = self.sim_module:forward(inputs)
   self.llstm:forget()
   self.rlstm:forget()
-
+  if self.structure == 'bilstm' then
+    self.llstm_b:forget()
+    self.rlstm_b:forget()
+  end
   return output
 end
 

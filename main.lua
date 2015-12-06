@@ -3,11 +3,13 @@ require 'init'
 
 local args = lapp [[
 Training script for semantic relatedness prediction on the SICK dataset.
-  -m,--model  (default treeLSTM) Model architecture: [treeLSTM, seqLSTM]
+  -m,--model  (default treeLSTM)  Model architecture: [treeLSTM, seqLSTM]
   -d,--dim    (default 10)        LSTM memory dimension
-  -e,--epochs (default 10)         Number of training epochs
-  -g,--debug  (default nil)        debug setting   
-  -c,--cuda   (default nil)       cuda setting
+  -e,--epochs (default 10)        Number of training epochs
+  -l,--layer (default 1)          Number of layers
+  -s,--structure (default lstm)   lstm structure
+  -g,--debug  (default nil)       debug setting   
+
 ]]
 
 if args.debug == 'dbg' then
@@ -64,6 +66,8 @@ end
 local model = model_class{
   emb_vecs   = vecs,
   mem_dim    = args.dim,
+  structure = args.structure,
+  num_layers = args.num_layers
 }
 
 -- number of epochs to train
@@ -81,7 +85,7 @@ confusion = optim.ConfusionMatrix(classes)
 -- train
 local train_start = sys.clock()
 local best_dev_score = -1.0
-local best_dev_model = model
+
 header('Training model')
 for i = 1, num_epochs do
   local start = sys.clock()
