@@ -42,7 +42,7 @@ function LSTMSim:__init(config)
     error('invalid LSTM type: ' .. self.structure)
   end
 
-  self.sim_module = self:new_sim_module_flatCNN()
+  self.sim_module = self:new_sim_module()
 
   local modules = nn.Parallel()
     :add(self.llstm)
@@ -232,7 +232,7 @@ function LSTMSim:new_sim_module_complex()
 
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
-    :add(nn.SpatialConvolution(n_input_plane, n_output_plane, conv_kw, conv_kh))
+    :add(nn.SpatialConvolutionMM(n_input_plane, n_output_plane, conv_kw, conv_kh))
     :add(nn.Tanh())
     :add(nn.SpatialMaxPooling(pool_kw, pool_kh, 1, 1))
     :add(nn.Reshape(mlp_input_dim))
