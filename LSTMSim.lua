@@ -42,7 +42,7 @@ function LSTMSim:__init(config)
     error('invalid LSTM type: ' .. self.structure)
   end
 
-  self.sim_module = self:new_sim_module()
+  self.sim_module = self:new_sim_module_complex()
 
   local modules = nn.Parallel()
     :add(self.llstm)
@@ -104,7 +104,7 @@ function LSTMSim:new_sim_module()
 end
 
 function LSTMSim:new_sim_module_complex()
-  print('Using complex sim module')
+  print('Using complex sim module, num_layers must > 2')
   local lmat, rmat, inputs
 
   if self.structure == 'lstm' then
@@ -246,7 +246,7 @@ end
 
 
 function LSTMSim:new_sim_module_flatCNN()
-  print('Using flatCNN sim module')
+  print('Using flatCNN sim module, num_layers must > 2')
   local lmat, rmat, inputs
 
   if self.structure == 'lstm' then
@@ -516,7 +516,7 @@ end
 
 function LSTMSim:print_config()
   local num_params = self.params:nElement()
-  local num_sim_params = self:new_sim_module():getParameters():nElement()
+  local num_sim_params = self.sim_module:getParameters():nElement()
   printf('%-25s = %d\n',   'num params', num_params)
   printf('%-25s = %d\n',   'num compositional params', num_params - num_sim_params)
   printf('%-25s = %d\n',   'word vector dim', self.emb_dim)

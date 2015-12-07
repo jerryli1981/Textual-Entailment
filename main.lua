@@ -51,7 +51,7 @@ local train_dataset = read_dataset(train_dir, vocab)
 local dev_dataset = read_dataset(dev_dir, vocab)
 local test_dataset = read_dataset(test_dir, vocab)
 
-mod = require 'HighwayMLP'
+
 
 printf('num train = %d\n', train_dataset.size)
 printf('num dev = %d\n', dev_dataset.size)
