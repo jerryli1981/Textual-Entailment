@@ -7,6 +7,7 @@ Training script for semantic relatedness prediction on the SICK dataset.
   -d,--dim    (default 10)        LSTM memory dimension
   -e,--epochs (default 10)        Number of training epochs
   -l,--num_layers (default 1)          Number of layers
+  -h,--sim_nhidden (default 50)    number of sim_hidden
   -s,--structure (default lstm)   lstm structure
   -g,--debug  (default nil)       debug setting   
 
@@ -67,7 +68,8 @@ local model = model_class{
   emb_vecs   = vecs,
   mem_dim    = args.dim,
   structure = args.structure,
-  num_layers = args.num_layers
+  num_layers = args.num_layers,
+  sim_nhidden = args.sim_nhidden
 }
 
 -- number of epochs to train
@@ -103,10 +105,11 @@ for i = 1, num_epochs do
   if dev_score > best_dev_score then
     best_dev_score = dev_score
     best_dev_model = model_class{
-      emb_vecs = vecs,
+      emb_vecs   = vecs,
+      mem_dim    = args.dim,
       structure = args.structure,
       num_layers = args.num_layers,
-      mem_dim    = args.dim,
+      sim_nhidden = args.sim_nhidden
     }
     best_dev_model.params:copy(model.params)
   end
