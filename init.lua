@@ -5,6 +5,7 @@ require('optim')
 require('xlua')
 require('sys')
 require('lfs')
+require('nnconv1d')
 
 include('read_data.lua')
 include('Tree.lua')
@@ -15,6 +16,8 @@ include('ChildSumTreeLSTM.lua')
 include('TreeLSTMSim.lua')
 include('LSTM.lua')
 include('LSTMSim.lua')
+
+HighwayMLP = require 'HighwayMLP'
 
 torch.setnumthreads(8)
 
