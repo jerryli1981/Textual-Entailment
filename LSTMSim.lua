@@ -107,7 +107,7 @@ function LSTMSim:new_sim_module_complex()
   print('Using complex sim module, num_layers must > 2')
   local lmat, rmat, inputs
 
-  loca num_plate
+  local num_plate
   if self.structure == 'lstm' then
 
     num_plate = 2
