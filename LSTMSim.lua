@@ -42,7 +42,7 @@ function LSTMSim:__init(config)
     error('invalid LSTM type: ' .. self.structure)
   end
 
-  self.sim_module = self:new_sim_module()
+  self.sim_module = self:new_sim_module_complex()
 
   local modules = nn.Parallel()
     :add(self.llstm)
@@ -107,7 +107,10 @@ function LSTMSim:new_sim_module_complex()
   print('Using complex sim module, num_layers must > 2')
   local lmat, rmat, inputs
 
+  loca num_plate
   if self.structure == 'lstm' then
+
+    num_plate = 2
 
     local linput, rinput = nn.Identity()(), nn.Identity()()
     
@@ -127,6 +130,8 @@ function LSTMSim:new_sim_module_complex()
     inputs = {linput, rinput}
 
   elseif self.structure == 'bilstm' then
+
+    num_plate = 4
 
     local lf, lb, rf, rb = nn.Identity()(), nn.Identity()(), nn.Identity()(), nn.Identity()()
 
@@ -207,7 +212,9 @@ function LSTMSim:new_sim_module_complex()
 
   local out_mat = nn.JoinTable(1){mult_dist, add_dist}
 
-  out_mat = nn.Reshape(2, img_h, img_w){out_mat}
+
+
+  out_mat = nn.Reshape(num_plate, img_h, img_w){out_mat}
 
   --out_mat = nn.Reshape(2*seq_length*2*self.mem_dim){out_mat}
 
@@ -215,8 +222,8 @@ function LSTMSim:new_sim_module_complex()
 
   local conv_kw = img_w
   local conv_kh = 2
-  local n_input_plane = 2
-  local n_output_plane = 2
+  local n_input_plane = num_plate
+  local n_output_plane = num_plate
   local pool_kw = 1
   local pool_kh = 2
 
@@ -527,10 +534,10 @@ function LSTMSim:predict_dataset(dataset)
 end
 
 function LSTMSim:print_config()
-  --local num_params = self.params:nElement()
-  --local num_sim_params = self:new_sim_module():getParameters():nElement()
-  --printf('%-25s = %d\n',   'num params', num_params)
-  --printf('%-25s = %d\n',   'num compositional params', num_params - num_sim_params)
+  local num_params = self.params:nElement()
+  local num_sim_params = self.sim_module:getParameters():nElement()
+  printf('%-25s = %d\n',   'num params', num_params)
+  printf('%-25s = %d\n',   'num compositional params', num_params - num_sim_params)
   printf('%-25s = %d\n',   'word vector dim', self.emb_dim)
   printf('%-25s = %d\n',   'LSTM memory dim', self.mem_dim)
   printf('%-25s = %.2e\n', 'regularization strength', self.reg)

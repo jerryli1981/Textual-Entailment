@@ -124,50 +124,15 @@ function TreeLSTMSim:train(dataset)
         self.emb:forward(lsent)
         local linputs = torch.Tensor(self.emb.output:size()):copy(self.emb.output)
         local rinputs = self.emb:forward(rsent)
-
-        -- get sentence representations
-        --[[
-        all_states_l={}        
-        local lrep= self.treelstm:forward(ltree, linputs, all_states_l)[2]
-        root_l = nn.Reshape(1, self.mem_dim):forward(lrep)
-        table.insert(all_states_l, root_l)
-        
-        if ltree:size() < 36 then
-          for i = 1, 36-ltree:size() do
-            table.insert(all_states_l, i, torch.Tensor(1, self.mem_dim):zero())
-          end
-        end  
-        matrix_l = nn.JoinTable(1):forward(all_states_l)
-
-        all_states_r={}        
-        local rrep= self.treelstm:forward(rtree, rinputs, all_states_r)[2]
-        root_r = nn.Reshape(1, self.mem_dim):forward(rrep)
-        table.insert(all_states_r, root_r)
-        if rtree:size() < 36 then
-          for i = 1, 36-rtree:size() do
-            table.insert(all_states_r, i, torch.Tensor(1, self.mem_dim):zero())
-          end
-        end        
-        matrix_r = nn.JoinTable(1):forward(all_states_r)
-
-        local output = self.sim_module:forward{matrix_l, matrix_r}   
-        --]]     
         
         local lrep = self.treelstm:forward(ltree, linputs)[2]
         local rrep = self.treelstm:forward(rtree, rinputs)[2]
         local output = self.sim_module:forward{lrep, rrep}
 
-        -- compute loss and backpropagate
         local example_loss = self.criterion:forward(output, ent)
         loss = loss + example_loss
         local sim_grad = self.criterion:backward(output, ent)
         local rep_grad = self.sim_module:backward({lrep, rrep}, sim_grad)
-
-        --local rep_grad = self.sim_module:backward({matrix_l, matrix_r}, sim_grad)
-        --rep_grad_l = rep_grad[1][-1]
-        --rep_grad_r = rep_grad[2][-1]
-        --local linput_grads = self.treelstm:backward(dataset.ltrees[idx], linputs, {zeros, rep_grad_l})
-        --local rinput_grads = self.treelstm:backward(dataset.rtrees[idx], rinputs, {zeros, rep_grad_r})
 
         local linput_grads = self.treelstm:backward(dataset.ltrees[idx], linputs, {zeros, rep_grad[1]})
         local rinput_grads = self.treelstm:backward(dataset.rtrees[idx], rinputs, {zeros, rep_grad[2]})
@@ -234,7 +199,7 @@ end
 
 function TreeLSTMSim:print_config()
   local num_params = self.params:size(1)
-  local num_sim_params = self:new_sim_module():getParameters():size(1)
+  local num_sim_params = self.sim_module:getParameters():size(1)
   printf('%-25s = %d\n',   'num params', num_params)
   printf('%-25s = %d\n',   'num compositional params', num_params - num_sim_params)
   printf('%-25s = %d\n',   'word vector dim', self.emb_dim)

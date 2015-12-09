@@ -31,7 +31,7 @@ local emb_dim = emb_vecs:size(2)
 local num_unk=0
 
 local vecs = torch.Tensor(vocab.size, emb_dim)
---dbg()
+
 for i = 1, vocab.size do
 	local w = vocab:token(i)
 	if emb_vocab:contains(w) then
@@ -53,7 +53,6 @@ local test_dir = data_dir .. 'test/'
 local train_dataset = read_dataset(train_dir, vocab)
 local dev_dataset = read_dataset(dev_dir, vocab)
 local test_dataset = read_dataset(test_dir, vocab)
-
 
 printf('num train = %d\n', train_dataset.size)
 printf('num dev = %d\n', dev_dataset.size)
