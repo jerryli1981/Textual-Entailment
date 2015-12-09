@@ -198,10 +198,6 @@ function argmax(v)
 end
 
 function TreeLSTMSim:print_config()
-  local num_params = self.params:size(1)
-  local num_sim_params = self.sim_module:getParameters():size(1)
-  printf('%-25s = %d\n',   'num params', num_params)
-  printf('%-25s = %d\n',   'num compositional params', num_params - num_sim_params)
   printf('%-25s = %d\n',   'word vector dim', self.emb_dim)
   printf('%-25s = %d\n',   'Tree-LSTM memory dim', self.mem_dim)
   printf('%-25s = %.2e\n', 'regularization strength', self.reg)

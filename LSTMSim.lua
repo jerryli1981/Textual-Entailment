@@ -534,10 +534,6 @@ function LSTMSim:predict_dataset(dataset)
 end
 
 function LSTMSim:print_config()
-  local num_params = self.params:nElement()
-  local num_sim_params = self.sim_module:getParameters():nElement()
-  printf('%-25s = %d\n',   'num params', num_params)
-  printf('%-25s = %d\n',   'num compositional params', num_params - num_sim_params)
   printf('%-25s = %d\n',   'word vector dim', self.emb_dim)
   printf('%-25s = %d\n',   'LSTM memory dim', self.mem_dim)
   printf('%-25s = %.2e\n', 'regularization strength', self.reg)
