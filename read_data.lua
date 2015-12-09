@@ -90,7 +90,7 @@ function read_dataset(dir, vocab)
   local dataset = {}
   dataset.vocab = vocab
   
-  dataset.msents = read_sentences(dir .. 'm.toks', vocab)
+  --dataset.msents = read_sentences(dir .. 'm.toks', vocab)
   dataset.lsents = read_sentences(dir .. 'a.toks', vocab)
   dataset.rsents = read_sentences(dir .. 'b.toks', vocab)
   dataset.size = #dataset.lsents
@@ -105,7 +105,7 @@ function read_dataset(dir, vocab)
 
   dataset.ltrees = read_trees(dir .. 'a.parents', dataset.labels)
   dataset.rtrees = read_trees(dir .. 'b.parents', dataset.labels)
-  dataset.mtrees = read_trees(dir .. 'm.parents', dataset.labels)
+  --dataset.mtrees = read_trees(dir .. 'm.parents', dataset.labels)
 
   id_file:close()
   label_file:close()
