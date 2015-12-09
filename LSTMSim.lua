@@ -42,7 +42,7 @@ function LSTMSim:__init(config)
     error('invalid LSTM type: ' .. self.structure)
   end
 
-  self.sim_module = self:new_sim_module_flatCNN()
+  self.sim_module = self:new_sim_module()
 
   local modules = nn.Parallel()
     :add(self.llstm)
@@ -152,7 +152,6 @@ function LSTMSim:new_sim_module_complex()
 
     lf_mat = nn.JoinTable(1)(lf_r)
     lb_mat = nn.JoinTable(1)(lb_r)
-
     lmat = nn.JoinTable(1){lf_mat, lb_mat}
 
     rf_mat = nn.JoinTable(1)(rf_r)
@@ -208,7 +207,7 @@ function LSTMSim:new_sim_module_complex()
 
   local out_mat = nn.JoinTable(1){mult_dist, add_dist}
 
-  out_mat = nn.Reshape(4, img_h, img_w){out_mat}
+  out_mat = nn.Reshape(2, img_h, img_w){out_mat}
 
   --out_mat = nn.Reshape(2*seq_length*2*self.mem_dim){out_mat}
 
@@ -216,8 +215,8 @@ function LSTMSim:new_sim_module_complex()
 
   local conv_kw = img_w
   local conv_kh = 2
-  local n_input_plane = 4
-  local n_output_plane = 4
+  local n_input_plane = 2
+  local n_output_plane = 2
   local pool_kw = 1
   local pool_kh = 2
 
@@ -493,19 +492,32 @@ function LSTMSim:predict(lsent, rsent)
     }
   end
   local output = self.sim_module:forward(inputs)
+  local prediction = argmax(output)
   self.llstm:forget()
   self.rlstm:forget()
   if self.structure == 'bilstm' then
     self.llstm_b:forget()
     self.rlstm_b:forget()
   end
-  return output
+  return prediction
+end
+
+function argmax(v)
+  local idx = 1
+  local max = v[1]
+  for i = 2, v:size(1) do
+    if v[i] > max then
+      max = v[i]
+      idx = i
+    end
+  end
+  return idx
 end
 
 -- Produce similarity predictions for each sentence pair in the dataset.
 function LSTMSim:predict_dataset(dataset)
 
-  local predictions = torch.Tensor(dataset.size, self.num_classes)
+  local predictions = torch.Tensor(dataset.size)
   for i = 1, dataset.size do
     xlua.progress(i, dataset.size)
     local lsent, rsent = dataset.lsents[i], dataset.rsents[i]

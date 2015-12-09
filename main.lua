@@ -1,5 +1,8 @@
 require 'init' 
 
+function accuracy(pred,gold)
+  return torch.eq(pred, gold):sum()/pred:size(1)
+end
 
 local args = lapp [[
 Training script for semantic relatedness prediction on the SICK dataset.
@@ -52,7 +55,6 @@ local dev_dataset = read_dataset(dev_dir, vocab)
 local test_dataset = read_dataset(test_dir, vocab)
 
 
-
 printf('num train = %d\n', train_dataset.size)
 printf('num dev = %d\n', dev_dataset.size)
 printf('num test = %d\n', test_dataset.size)
@@ -82,10 +84,6 @@ header('model configuration')
 printf('max epochs = %d\n', num_epochs)
 model:print_config()
 
-classes = {'1','2','3'}
-
-confusion = optim.ConfusionMatrix(classes)
-
 -- train
 local train_start = sys.clock()
 local best_dev_score = -1.0
@@ -98,10 +96,8 @@ for i = 1, num_epochs do
   printf('-- finished epoch in %.2fs\n', sys.clock() - start)
 
   local dev_predictions = model:predict_dataset(dev_dataset)
+  local dev_score = accuracy(dev_predictions, dev_dataset.labels)
 
-  confusion:batchAdd(dev_predictions, dev_dataset.labels)
-  confusion:updateValids()
-  dev_score = confusion.totalValid * 100
   printf('--dev_accuracy: %.4f\n', dev_score)
 
   if dev_score > best_dev_score then
@@ -124,7 +120,5 @@ printf('finished training in %.2fs\n', sys.clock() - train_start)
 header('Evaluating on test set')
 printf('-- using model with dev score = %.4f\n', best_dev_score)
 local test_predictions = best_dev_model:predict_dataset(test_dataset)
-confusion:batchAdd(test_predictions, test_dataset.labels)
-confusion:updateValids()
-test_score = confusion.totalValid * 100
+local test_score = accuracy(test_predictions, test_dataset.labels)
 printf('-- test score: %.4f\n', test_score)

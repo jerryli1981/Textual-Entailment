@@ -25,13 +25,12 @@ function read_sentences(path, vocab)
   return sentences
 end
 
-function read_trees(parent_path, label_path)
+function read_trees(parent_path, labels)
   local parent_file = io.open(parent_path, 'r')
-  local label_file
-  if label_path ~= nil then label_file = io.open(label_path, 'r') end
+
   local count = 0
   local trees = {}
-
+  
   while true do
     local parents = parent_file:read()
     if parents == nil then break end
@@ -40,30 +39,17 @@ function read_trees(parent_path, label_path)
       parents[i] = tonumber(p)
     end
 
-    local labels
-    if label_file ~= nil then
-      labels = stringx.split(label_file:read())
-      for i, l in ipairs(labels) do
-        -- ignore unlabeled nodes
-        if l == '#' then
-          labels[i] = nil
-        else
-          labels[i] = tonumber(l)
-        end
-      end
-    end
-
     count = count + 1
-    trees[count] = read_tree(parents, labels)
+
+    trees[count] = read_tree(parents, labels[count])
   end
   parent_file:close()
   return trees
 end
 
-function read_tree(parents, labels)
+function read_tree(parents, label)
   local size = #parents
   local trees = {}
-  if labels == nil then labels = {} end
   local root
   for i = 1, size do
     if not trees[i] and parents[i] ~= -1 then
@@ -81,7 +67,7 @@ function read_tree(parents, labels)
         end
         trees[idx] = tree
         tree.idx = idx
-        tree.gold_label = labels[idx]
+        tree.gold_label = label
         if trees[parent] ~= nil then
           trees[parent]:add_child(tree)
           break
@@ -96,15 +82,6 @@ function read_tree(parents, labels)
     end
   end
 
-  -- index leaves (only meaningful for constituency trees)
-  local leaf_idx = 1
-  for i = 1, size do
-    local tree = trees[i]
-    if tree ~= nil and tree.num_children == 0 then
-      tree.leaf_idx = leaf_idx
-      leaf_idx = leaf_idx + 1
-    end
-  end
   return root
 end
 
@@ -112,63 +89,25 @@ function read_dataset(dir, vocab)
   local labelMap = {NEUTRAL=3, CONTRADICTION=1, ENTAILMENT=2}
   local dataset = {}
   dataset.vocab = vocab
-  dataset.ltrees = read_trees(dir .. 'a.parents')
-  dataset.rtrees = read_trees(dir .. 'b.parents')
-
+  
+  dataset.msents = read_sentences(dir .. 'm.toks', vocab)
   dataset.lsents = read_sentences(dir .. 'a.toks', vocab)
   dataset.rsents = read_sentences(dir .. 'b.toks', vocab)
-  dataset.size = #dataset.ltrees
+  dataset.size = #dataset.lsents
   local id_file = torch.DiskFile(dir .. 'id.txt')
-  local sim_file = torch.DiskFile(dir .. 'sim.txt')
   local label_file = io.open(dir .. 'label.txt', 'r')
   dataset.ids = torch.IntTensor(dataset.size)
-  dataset.scores = torch.Tensor(dataset.size)
   dataset.labels = torch.Tensor(dataset.size)
   for i = 1, dataset.size do
     dataset.ids[i] = id_file:readInt()
-    --dataset.scores[i] = 0.25 * (sim_file:readDouble() - 1)
     dataset.labels[i] = labelMap[label_file:read()]
   end
+
+  dataset.ltrees = read_trees(dir .. 'a.parents', dataset.labels)
+  dataset.rtrees = read_trees(dir .. 'b.parents', dataset.labels)
+  dataset.mtrees = read_trees(dir .. 'm.parents', dataset.labels)
+
   id_file:close()
-  sim_file:close()
   label_file:close()
   return dataset
-end
-
-
-function set_spans(tree)
-  if tree.num_children == 0 then
-    tree.lo, tree.hi = tree.leaf_idx, tree.leaf_idx
-    return
-  end
-
-  for i = 1, tree.num_children do
-    set_spans(tree.children[i])
-  end
-
-  tree.lo, tree.hi = tree.children[1].lo, tree.children[1].hi
-  for i = 2, tree.num_children do
-    tree.lo = math.min(tree.lo, tree.children[i].lo)
-    tree.hi = math.max(tree.hi, tree.children[i].hi)
-  end
-end
-
-function remap_labels(tree, fine_grained)
-  if tree.gold_label ~= nil then
-    if fine_grained then
-      tree.gold_label = tree.gold_label + 3
-    else
-      if tree.gold_label < 0 then
-        tree.gold_label = 1
-      elseif tree.gold_label == 0 then
-        tree.gold_label = 2
-      else
-        tree.gold_label = 3
-      end
-    end
-  end
-
-  for i = 1, tree.num_children do
-    remap_labels(tree.children[i], fine_grained)
-  end
 end

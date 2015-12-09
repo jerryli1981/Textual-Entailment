@@ -199,15 +199,18 @@ function TreeLSTMSim:predict(ltree, rtree, lsent, rsent)
   local rinputs = self.emb:forward(rsent)
   local rrep = self.treelstm:forward(rtree, rinputs)[2]
   local output = self.sim_module:forward{lrep, rrep}
+
+  local prediction = argmax(output)
   self.treelstm:clean(ltree)
   self.treelstm:clean(rtree)
-  return output
+  return prediction
 end
 
 -- Produce similarity predictions for each sentence pair in the dataset.
 function TreeLSTMSim:predict_dataset(dataset)
   self.treelstm:evaluate()
-  local predictions = torch.Tensor(dataset.size, self.num_classes)
+
+  local predictions = torch.Tensor(dataset.size)
   for i = 1, dataset.size do
     xlua.progress(i, dataset.size)
     local ltree, rtree = dataset.ltrees[i], dataset.rtrees[i]
@@ -215,6 +218,18 @@ function TreeLSTMSim:predict_dataset(dataset)
     predictions[i] = self:predict(ltree, rtree, lsent, rsent)
   end
   return predictions
+end
+
+function argmax(v)
+  local idx = 1
+  local max = v[1]
+  for i = 2, v:size(1) do
+    if v[i] > max then
+      max = v[i]
+      idx = i
+    end
+  end
+  return idx
 end
 
 function TreeLSTMSim:print_config()
