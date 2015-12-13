@@ -181,7 +181,7 @@ function LSTMSim:new_sim_module_complex()
   local conv_kw = img_w
   local conv_kh = 2
   local n_input_plane = num_plate
-  local n_output_plane = num_plate
+  local n_output_plane = 2
   local pool_kw = 1
   local pool_kh = 2
 
@@ -196,15 +196,15 @@ function LSTMSim:new_sim_module_complex()
     :add(vecs_to_input)
     --:add(nn.SpatialConvolution(n_input_plane, n_output_plane, conv_kw, conv_kh))
     :add(nn.LateralConvolution(n_input_plane, n_output_plane))
-    :add(nn.VerticalConvolution(n_input_plane, n_output_plane, conv_kh))
-    :add(nn.HorizontalConvolution(n_input_plane, n_output_plane, conv_kw))
+    :add(nn.VerticalConvolution(n_output_plane, n_output_plane, conv_kh))
+    :add(nn.HorizontalConvolution(n_output_plane, n_output_plane, conv_kw))
     :add(nn.Tanh())
     :add(nn.SpatialMaxPooling(pool_kw, pool_kh, 1, 1))
     :add(nn.Reshape(mlp_input_dim))
-    --:add(HighwayMLP.mlp(mlp_input_dim, 2))
-    :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
-    :add(nn.Sigmoid())
-    :add(nn.Linear(self.sim_nhidden, self.num_classes))
+    :add(HighwayMLP.mlp(mlp_input_dim, 1))
+    :add(nn.Linear(mlp_input_dim, self.num_classes))
+    --:add(nn.Sigmoid())
+    --:add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
   return sim_module
 
