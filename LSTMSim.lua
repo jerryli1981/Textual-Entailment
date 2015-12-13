@@ -42,8 +42,6 @@ function LSTMSim:__init(config)
   end
 
   self.sim_module = self:new_sim_module_complex()
-  local num_sim_params = self.sim_module:getParameters():nElement()
-  printf('%-25s = %d\n',   'number of sim parameters', num_sim_params)
 
   local modules = nn.Parallel()
     :add(self.llstm)
@@ -158,58 +156,17 @@ function LSTMSim:new_sim_module_complex()
 
     lf_mat = nn.JoinTable(1)(lf_r)
     lb_mat = nn.JoinTable(1)(lb_r)
-
     lmat = nn.JoinTable(1){lf_mat, lb_mat}
-    lmat = nn.Linear(self.sim_nhidden, self.sim_nhidden)(lmat)
 
     rf_mat = nn.JoinTable(1)(rf_r)
     rb_mat = nn.JoinTable(1)(rb_r)
     rmat = nn.JoinTable(1){rf_mat, rb_mat}
-    rmat = nn.Linear(self.sim_nhidden, self.sim_nhidden)(rmat)
 
     inputs = {lf, lb, rf, rb}
   end
 
   local img_h = self.num_layers
   local img_w = self.mem_dim
-
-  --local lmat_s = nn.SplitTable(1)(lmat)
-  --local rmat_s = nn.SplitTable(1)(rmat)
-
-  --[[
-  local cos_mat = {}
-  for i=1, seq_length do
-    local lvec = nn.SelectTable(i)(lmat_s)
-    for j=1, seq_length do
-      local rvec = nn.SelectTable(j)(rmat_s)
-      local cosine_dist = nn.CosineDistance(){lvec, rvec}
-      table.insert(cos_mat, cosine_dist)
-    end
-  end
-
-  cos_mat = nn.Identity()(cos_mat)
-  cos_mat = nn.JoinTable(1){cos_mat}
-  cos_mat = nn.Reshape(seq_length*seq_length){cos_mat}
-  --]]
-
-  --[[
-  local p_mat = {}
-  for i=1, seq_length do
-    local lvec = nn.SelectTable(i)(lmat_s)
-    for j=1, seq_length do
-      local rvec = nn.SelectTable(j)(rmat_s)
-      local p_dist = nn.DotProduct(){lvec, rvec}
-      table.insert(p_mat, p_dist)
-    end
-  end
-
-  p_mat = nn.Identity()(p_mat)
-  p_mat = nn.JoinTable(1){p_mat}
-  p_mat = nn.Reshape(seq_length*seq_length){p_mat}
-  --]]
-
-  --merge_mat = nn.JoinTable(1){cos_mat, p_mat}
-  --out_mat = nn.Reshape(2, seq_length, seq_length){merge_mat}
 
   local mult_dist = nn.CMulTable(){lmat, rmat}
 
@@ -235,8 +192,6 @@ function LSTMSim:new_sim_module_complex()
 
   local mlp_input_dim = n_output_plane*pool_out_h*pool_out_w
 
-  --mlp = HighwayMLP.mlp(mlp_input_dim)
-
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
     --:add(nn.SpatialConvolution(n_input_plane, n_output_plane, conv_kw, conv_kh))
@@ -246,6 +201,7 @@ function LSTMSim:new_sim_module_complex()
     :add(nn.Tanh())
     :add(nn.SpatialMaxPooling(pool_kw, pool_kh, 1, 1))
     :add(nn.Reshape(mlp_input_dim))
+    --:add(HighwayMLP.mlp(mlp_input_dim, 2))
     :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
     :add(nn.Sigmoid())
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
@@ -297,6 +253,7 @@ function LSTMSim:train(dataset)
 
         local output = self.sim_module:forward(inputs)
         --dbg()
+        
   
         -- compute loss and backpropagate
         local example_loss = self.criterion:forward(output, ent)
