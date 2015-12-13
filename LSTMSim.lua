@@ -9,7 +9,6 @@ function LSTMSim:__init(config)
   self.structure     = config.structure     or 'lstm'
   self.num_layers    = config.num_layers    or 1
 
-
   -- word embedding
   self.emb_dim = config.emb_vecs:size(2)
   self.emb_vecs = config.emb_vecs
@@ -43,6 +42,8 @@ function LSTMSim:__init(config)
   end
 
   self.sim_module = self:new_sim_module_complex()
+  local num_sim_params = self.sim_module:getParameters():nElement()
+  printf('%-25s = %d\n',   'number of sim parameters', num_sim_params)
 
   local modules = nn.Parallel()
     :add(self.llstm)
@@ -157,11 +158,15 @@ function LSTMSim:new_sim_module_complex()
 
     lf_mat = nn.JoinTable(1)(lf_r)
     lb_mat = nn.JoinTable(1)(lb_r)
+
     lmat = nn.JoinTable(1){lf_mat, lb_mat}
+    lmat = nn.Linear(self.sim_nhidden, self.sim_nhidden)(lmat)
 
     rf_mat = nn.JoinTable(1)(rf_r)
     rb_mat = nn.JoinTable(1)(rb_r)
     rmat = nn.JoinTable(1){rf_mat, rb_mat}
+    rmat = nn.Linear(self.sim_nhidden, self.sim_nhidden)(rmat)
+
     inputs = {lf, lb, rf, rb}
   end
 
@@ -212,11 +217,7 @@ function LSTMSim:new_sim_module_complex()
 
   local out_mat = nn.JoinTable(1){mult_dist, add_dist}
 
-
-
   out_mat = nn.Reshape(num_plate, img_h, img_w){out_mat}
-
-  --out_mat = nn.Reshape(2*seq_length*2*self.mem_dim){out_mat}
 
   vecs_to_input = nn.gModule(inputs, {out_mat})
 
@@ -234,11 +235,14 @@ function LSTMSim:new_sim_module_complex()
 
   local mlp_input_dim = n_output_plane*pool_out_h*pool_out_w
 
-  --local mlp_input_dim = img_h*4*img_w
+  --mlp = HighwayMLP.mlp(mlp_input_dim)
 
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
-    :add(nn.SpatialConvolution(n_input_plane, n_output_plane, conv_kw, conv_kh))
+    --:add(nn.SpatialConvolution(n_input_plane, n_output_plane, conv_kw, conv_kh))
+    :add(nn.LateralConvolution(n_input_plane, n_output_plane))
+    :add(nn.VerticalConvolution(n_input_plane, n_output_plane, conv_kh))
+    :add(nn.HorizontalConvolution(n_input_plane, n_output_plane, conv_kw))
     :add(nn.Tanh())
     :add(nn.SpatialMaxPooling(pool_kw, pool_kh, 1, 1))
     :add(nn.Reshape(mlp_input_dim))
@@ -246,111 +250,6 @@ function LSTMSim:new_sim_module_complex()
     :add(nn.Sigmoid())
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
-  return sim_module
-
-end
-
-
-function LSTMSim:new_sim_module_flatCNN()
-  print('Using flatCNN sim module, num_layers must > 2')
-  local lmat, rmat, inputs
-
-  if self.structure == 'lstm' then
-
-    local linput, rinput = nn.Identity()(), nn.Identity()()
-    
-    local linput_r,rinput_r = {},{}
-    for i=1, self.num_layers do
-
-      l_i_vec = nn.SelectTable(i)(linput)
-      l_i_vec = nn.Reshape(1, self.mem_dim)(l_i_vec)
-      linput_r[i] = l_i_vec
-
-      r_i_vec = nn.SelectTable(i)(rinput)
-      r_i_vec = nn.Reshape(1, self.mem_dim)(r_i_vec)
-      rinput_r[i] = r_i_vec
-    end
-
-    lmat, rmat = nn.JoinTable(1)(linput_r), nn.JoinTable(1)(rinput_r)
-    inputs = {linput, rinput}
-
-  elseif self.structure == 'bilstm' then
-
-    local lf, lb, rf, rb = nn.Identity()(), nn.Identity()(), nn.Identity()(), nn.Identity()()
-
-    local lf_r, lb_r, rf_r, rb_r = {},{},{},{}
-    for i=1, self.num_layers do
-
-      lf_i_vec = nn.SelectTable(i)(lf)
-      lf_i_vec = nn.Reshape(1, self.mem_dim)(lf_i_vec)
-      lf_r[i] = lf_i_vec
-
-      lb_i_vec = nn.SelectTable(i)(lb)
-      lb_i_vec = nn.Reshape(1, self.mem_dim)(lb_i_vec)
-      lb_r[i] = lb_i_vec
-
-      rf_i_vec = nn.SelectTable(i)(rf)
-      rf_i_vec = nn.Reshape(1, self.mem_dim)(rf_i_vec)
-      rf_r[i] = rf_i_vec
-
-      rb_i_vec = nn.SelectTable(i)(rb)
-      rb_i_vec = nn.Reshape(1, self.mem_dim)(rb_i_vec)
-      rb_r[i] = rb_i_vec
-    end
-
-    lf_mat = nn.JoinTable(1)(lf_r)
-    lb_mat = nn.JoinTable(1)(lb_r)
-
-    lmat = nn.JoinTable(1){lf_mat, lb_mat}
-
-    rf_mat = nn.JoinTable(1)(rf_r)
-    rb_mat = nn.JoinTable(1)(rb_r)
-    rmat = nn.JoinTable(1){rf_mat, rb_mat}
-    inputs = {lf, lb, rf, rb}
-  end
-
-  local img_h = self.num_layers
-  local img_w = self.mem_dim
-
-  local mult_dist = nn.CMulTable(){lmat, rmat}
-
-  local add_dist = nn.Abs()(nn.CSubTable(){lmat, rmat})
-
-  local out_mat = nn.JoinTable(1){mult_dist, add_dist}
-
-  out_mat = nn.Reshape(4, img_h, img_w){out_mat}
-
-  vecs_to_input = nn.gModule(inputs, {out_mat})
-
-  local conv_kw = img_w
-  local conv_kh = 2
-  local n_input_plane = 4
-  local n_output_plane = 4
-  local pool_kw = 1
-  local pool_kh = 2
-
-  local cov_out_h = img_h - conv_kh + 1
-  local cov_out_w = img_w - conv_kw + 1
-  local pool_out_h = cov_out_h - pool_kh + 1
-  local pool_out_w = cov_out_w -pool_kw + 1
-
-  local mlp_input_dim = n_output_plane*pool_out_h*pool_out_w
-
-  mlp = HighwayMLP.mlp(mlp_input_dim)
-
-  local sim_module = nn.Sequential()
-    :add(vecs_to_input)
-    --:add(nn.SpatialConvolutionMM(n_input_plane, n_output_plane, conv_kw, conv_kh))
-    :add(nn.LateralConvolution(4, 4))
-    :add(nn.VerticalConvolution(4, 4, conv_kh))
-    :add(nn.HorizontalConvolution(4, 4, conv_kw))
-    :add(nn.Tanh())
-    :add(nn.SpatialMaxPooling(pool_kw, pool_kh, 1, 1))
-    :add(nn.Reshape(mlp_input_dim))
-    :add(mlp)
-    :add(nn.Linear(mlp_input_dim, self.num_classes))
-    :add(nn.LogSoftMax())
-
   return sim_module
 
 end
