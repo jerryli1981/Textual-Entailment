@@ -105,11 +105,10 @@ end
 function LSTMSim:new_sim_module_complex()
   print('Using complex sim module, num_layers must > 2')
   local lmat, rmat, inputs
-
+  
   local num_plate
-  if self.structure == 'lstm' then
 
-    num_plate = 2
+  if self.structure == 'lstm' then
 
     local linput, rinput = nn.Identity()(), nn.Identity()()
     
@@ -130,10 +129,9 @@ function LSTMSim:new_sim_module_complex()
 
   elseif self.structure == 'bilstm' then
 
-    
-
     local lf, lb, rf, rb = nn.Identity()(), nn.Identity()(), nn.Identity()(), nn.Identity()()
 
+    --[[
     local lf_r, lb_r, rf_r, rb_r = {},{},{},{}
     for i=1, self.num_layers do
 
@@ -153,40 +151,43 @@ function LSTMSim:new_sim_module_complex()
       rb_i_vec = nn.Reshape(1, self.mem_dim)(rb_i_vec)
       rb_r[i] = rb_i_vec
     end
+    --]]
 
-    lf_mat = nn.JoinTable(1)(lf_r)
-    lb_mat = nn.JoinTable(1)(lb_r)
-    lmat = nn.JoinTable(1){lf_mat, lb_mat}
+    lmat = nn.JoinTable(1){nn.JoinTable(1)(lf), nn.JoinTable(1)(lb)}
+    rmat = nn.JoinTable(1){nn.JoinTable(1)(rf), nn.JoinTable(1)(rb)}
 
-    rf_mat = nn.JoinTable(1)(rf_r)
-    rb_mat = nn.JoinTable(1)(rb_r)
-    rmat = nn.JoinTable(1){rf_mat, rb_mat}
+    --lf_mat = nn.JoinTable(1)(lf_r)
+    --lb_mat = nn.JoinTable(1)(lb_r)
+    --lmat = nn.JoinTable(1){lf_mat, lb_mat}
+
+    --rf_mat = nn.JoinTable(1)(rf_r)
+    --rb_mat = nn.JoinTable(1)(rb_r)
+    --rmat = nn.JoinTable(1){rf_mat, rb_mat}
 
     inputs = {lf, lb, rf, rb}
   end
 
-  local img_h = self.num_layers *2
+  local img_h = self.num_layers*2
   local img_w = self.mem_dim
 
   local mult_dist = nn.CMulTable(){lmat, rmat}
 
   local add_dist = nn.Abs()(nn.CSubTable(){lmat, rmat})
 
-  local radial_dist = nn.Exp()(nn.MulConstant(-0.25)(nn.Power(2)(add_dist)))
+  --local radial_dist = nn.Exp()(nn.MulConstant(-0.25)(nn.Power(2)(add_dist)))
 
-  local out_mat = nn.JoinTable(1){mult_dist, add_dist, radial_dist}
+  local out_mat = nn.JoinTable(1){mult_dist, add_dist}
 
-  num_plate = 3
+  num_plate = 2
 
-  out_mat = nn.Reshape(num_plate, img_h, img_w){out_mat}
+  --out_mat = nn.Reshape(num_plate, img_h, img_w){out_mat}
 
   vecs_to_input = nn.gModule(inputs, {out_mat})
 
-  
   local conv_kw = img_w
   local conv_kh = 2
   local n_input_plane = num_plate
-  local n_output_plane = num_plate
+  local n_output_plane = 2
   local pool_kw = 1
   local pool_kh = 2
 
@@ -197,20 +198,25 @@ function LSTMSim:new_sim_module_complex()
 
   local mlp_input_dim = n_output_plane*pool_out_h*pool_out_w
 
+  local input_dim = 4 * self.num_layers * self.mem_dim
+
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
     --:add(nn.SpatialConvolution(n_input_plane, n_output_plane, conv_kw, conv_kh))
-    :add(nn.LateralConvolution(n_input_plane, n_output_plane))
-    :add(nn.VerticalConvolution(n_output_plane, n_output_plane, conv_kh))
-    :add(nn.HorizontalConvolution(n_output_plane, n_output_plane, conv_kw))
-    :add(nn.Tanh())
-    :add(nn.SpatialMaxPooling(pool_kw, pool_kh, 1, 1))
-    :add(nn.Reshape(mlp_input_dim))
-    :add(HighwayMLP.mlp(mlp_input_dim, 1))
-    :add(nn.Linear(mlp_input_dim, self.num_classes))
+    --:add(nn.LateralConvolution(n_input_plane, n_output_plane))
+    --:add(nn.VerticalConvolution(n_output_plane, n_output_plane, conv_kh))
+    --:add(nn.HorizontalConvolution(n_output_plane, n_output_plane, conv_kw))
+    --:add(nn.Tanh())
+    --:add(nn.SpatialMaxPooling(pool_kw, pool_kh, 1, 1))
+    --:add(nn.Reshape(mlp_input_dim))
+    --:add(HighwayMLP.mlp(mlp_input_dim, 1))
+    --:add(nn.Linear(mlp_input_dim, self.num_classes))
     --:add(nn.Sigmoid())
     --:add(nn.Linear(self.sim_nhidden, self.num_classes))
-    --:add(nn.LogSoftMax())
+    :add(nn.Linear(input_dim, self.sim_nhidden))
+    :add(nn.Sigmoid())    -- does better than tanh
+    :add(nn.Linear(self.sim_nhidden, self.num_classes))
+    :add(nn.LogSoftMax())
   return sim_module
 
 end
@@ -255,6 +261,7 @@ function LSTMSim:train(dataset)
             self.rlstm_b:forward(rinputs, true)
           }
         end
+
 
         local output = self.sim_module:forward(inputs)
         --dbg()
