@@ -130,7 +130,7 @@ function LSTMSim:new_sim_module_complex()
 
   elseif self.structure == 'bilstm' then
 
-    num_plate = 4
+    
 
     local lf, lb, rf, rb = nn.Identity()(), nn.Identity()(), nn.Identity()(), nn.Identity()()
 
@@ -165,23 +165,28 @@ function LSTMSim:new_sim_module_complex()
     inputs = {lf, lb, rf, rb}
   end
 
-  local img_h = self.num_layers
+  local img_h = self.num_layers *2
   local img_w = self.mem_dim
 
   local mult_dist = nn.CMulTable(){lmat, rmat}
 
   local add_dist = nn.Abs()(nn.CSubTable(){lmat, rmat})
 
-  local out_mat = nn.JoinTable(1){mult_dist, add_dist}
+  local radial_dist = nn.Exp()(nn.MulConstant(-0.25)(nn.Power(2)(add_dist)))
+
+  local out_mat = nn.JoinTable(1){mult_dist, add_dist, radial_dist}
+
+  num_plate = 3
 
   out_mat = nn.Reshape(num_plate, img_h, img_w){out_mat}
 
   vecs_to_input = nn.gModule(inputs, {out_mat})
 
+  
   local conv_kw = img_w
   local conv_kh = 2
   local n_input_plane = num_plate
-  local n_output_plane = 2
+  local n_output_plane = num_plate
   local pool_kw = 1
   local pool_kh = 2
 
@@ -205,7 +210,7 @@ function LSTMSim:new_sim_module_complex()
     :add(nn.Linear(mlp_input_dim, self.num_classes))
     --:add(nn.Sigmoid())
     --:add(nn.Linear(self.sim_nhidden, self.num_classes))
-    :add(nn.LogSoftMax())
+    --:add(nn.LogSoftMax())
   return sim_module
 
 end
