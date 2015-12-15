@@ -6,6 +6,7 @@ require('xlua')
 require('sys')
 require('lfs')
 require('nnconv1d')
+require('image')
 
 include('read_data.lua')
 include('Tree.lua')

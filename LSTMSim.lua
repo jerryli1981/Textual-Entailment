@@ -167,20 +167,20 @@ function LSTMSim:new_sim_module_complex()
     inputs = {lf, lb, rf, rb}
   end
 
-  local img_h = self.num_layers*2
+  local img_h = self.num_layers
   local img_w = self.mem_dim
 
   local mult_dist = nn.CMulTable(){lmat, rmat}
 
   local add_dist = nn.Abs()(nn.CSubTable(){lmat, rmat})
 
-  --local radial_dist = nn.Exp()(nn.MulConstant(-0.25)(nn.Power(2)(add_dist)))
+  local radial_dist = nn.Exp()(nn.MulConstant(-0.25)(nn.Power(2)(add_dist)))
 
-  local out_mat = nn.JoinTable(1){mult_dist, add_dist}
+  local out_mat = nn.JoinTable(1){mult_dist, add_dist, radial_dist}
 
-  num_plate = 2
+  num_plate = 6
 
-  --out_mat = nn.Reshape(num_plate, img_h, img_w){out_mat}
+  out_mat = nn.Reshape(num_plate, img_h, img_w){out_mat}
 
   vecs_to_input = nn.gModule(inputs, {out_mat})
 
@@ -198,22 +198,20 @@ function LSTMSim:new_sim_module_complex()
 
   local mlp_input_dim = n_output_plane*pool_out_h*pool_out_w
 
-  local input_dim = 4 * self.num_layers * self.mem_dim
+  --local mlp_input_dim = 4 * self.num_layers * self.mem_dim
 
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
     --:add(nn.SpatialConvolution(n_input_plane, n_output_plane, conv_kw, conv_kh))
-    --:add(nn.LateralConvolution(n_input_plane, n_output_plane))
-    --:add(nn.VerticalConvolution(n_output_plane, n_output_plane, conv_kh))
-    --:add(nn.HorizontalConvolution(n_output_plane, n_output_plane, conv_kw))
-    --:add(nn.Tanh())
-    --:add(nn.SpatialMaxPooling(pool_kw, pool_kh, 1, 1))
-    --:add(nn.Reshape(mlp_input_dim))
-    --:add(HighwayMLP.mlp(mlp_input_dim, 1))
-    --:add(nn.Linear(mlp_input_dim, self.num_classes))
-    --:add(nn.Sigmoid())
-    --:add(nn.Linear(self.sim_nhidden, self.num_classes))
-    :add(nn.Linear(input_dim, self.sim_nhidden))
+    :add(nn.LateralConvolution(n_input_plane, n_output_plane))
+    :add(nn.VerticalConvolution(n_output_plane, n_output_plane, conv_kh))
+    :add(nn.HorizontalConvolution(n_output_plane, n_output_plane, conv_kw))
+    :add(nn.Tanh())
+    :add(nn.SpatialMaxPooling(pool_kw, pool_kh, 1, 1))
+    :add(nn.SpatialSubtractiveNormalization(n_output_plane, image.gaussian1D(7)))
+    :add(nn.Reshape(mlp_input_dim))
+    :add(HighwayMLP.mlp(mlp_input_dim, 1))
+    :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
     :add(nn.Sigmoid())    -- does better than tanh
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
