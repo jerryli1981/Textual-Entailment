@@ -20,7 +20,7 @@ include('LSTMSim.lua')
 
 HighwayMLP = require 'HighwayMLP'
 
-torch.setnumthreads(8)
+torch.setnumthreads(4)
 
 printf = utils.printf
 
