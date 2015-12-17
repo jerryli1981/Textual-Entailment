@@ -100,7 +100,7 @@ for i = 1, num_epochs do
 
   printf('--dev_accuracy: %.4f\n', dev_score)
 
-  if dev_score > best_dev_score then
+  if dev_score >= best_dev_score then
     best_dev_score = dev_score
     --[[
     best_dev_model = model_class{
