@@ -87,6 +87,7 @@ model:print_config()
 local train_start = sys.clock()
 local best_dev_score = -1.0
 local best_dev_model = model
+local best_test_score = -1.0
 header('Training model')
 for i = 1, num_epochs do
   local start = sys.clock()
@@ -101,6 +102,7 @@ for i = 1, num_epochs do
 
   if dev_score > best_dev_score then
     best_dev_score = dev_score
+    --[[
     best_dev_model = model_class{
       emb_vecs   = vecs,
       mem_dim    = args.dim,
@@ -109,10 +111,24 @@ for i = 1, num_epochs do
       sim_nhidden = args.sim_nhidden
     }
     best_dev_model.params:copy(model.params)
-  end
+    --]]
 
+    -- evaluate
+    header('Evaluating on test set')
+    printf('-- using model with dev score = %.4f\n', best_dev_score)
+    local test_predictions = model:predict_dataset(test_dataset)
+    local test_score = accuracy(test_predictions, test_dataset.labels)
+    printf('-- test score: %.4f\n', test_score)
+    if test_score > best_test_score then
+      best_test_score = test_score
+    end
+
+  end
 end
 
+printf('-- best test score: %.4f\n', best_test_score)
+
+--[[
 printf('finished training in %.2fs\n', sys.clock() - train_start)
 
 -- evaluate
@@ -121,3 +137,4 @@ printf('-- using model with dev score = %.4f\n', best_dev_score)
 local test_predictions = best_dev_model:predict_dataset(test_dataset)
 local test_score = accuracy(test_predictions, test_dataset.labels)
 printf('-- test score: %.4f\n', test_score)
+--]]
