@@ -41,7 +41,7 @@ function LSTMSim:__init(config)
     error('invalid LSTM type: ' .. self.structure)
   end
 
-  self.sim_module = self:new_sim_module_complex()
+  self.sim_module = self:new_sim_module_conv1d()
 
   local modules = nn.Parallel()
     :add(self.llstm)
@@ -102,7 +102,7 @@ function LSTMSim:new_sim_module()
   return sim_module
 end
 
-function LSTMSim:new_sim_module_complex()
+function LSTMSim:new_sim_module_conv2d()
   print('Using complex sim module, num_layers must > 2')
   local lmat, rmat, inputs
   
@@ -179,8 +179,6 @@ function LSTMSim:new_sim_module_complex()
   local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*2*img_h)(nn.JoinTable(1){lmat, rmat}))
 
   local out_mat = nn.JoinTable(1){mult_dist, add_dist, max_dist}
-  --local out_mat = nn.JoinTable(1){mult_dist}
-  --local out_mat = radial_dist
 
   num_plate = 6
 
@@ -216,6 +214,113 @@ function LSTMSim:new_sim_module_complex()
     :add(nn.SpatialSubtractiveNormalization(n_output_plane, image.gaussian1D(7)))
     :add(nn.Reshape(mlp_input_dim))
     :add(HighwayMLP.mlp(mlp_input_dim, 1))
+    :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
+    :add(nn.Sigmoid())    -- does better than tanh
+    :add(nn.Linear(self.sim_nhidden, self.num_classes))
+    :add(nn.LogSoftMax())
+
+  return sim_module
+
+end
+
+function LSTMSim:new_sim_module_conv1d()
+  print('Using complex sim module, num_layers must > 2')
+  local lmat, rmat, inputs
+  
+  local num_plate
+
+  if self.structure == 'lstm' then
+
+    local linput, rinput = nn.Identity()(), nn.Identity()()
+    
+    local linput_r,rinput_r = {},{}
+    for i=1, self.num_layers do
+
+      l_i_vec = nn.SelectTable(i)(linput)
+      l_i_vec = nn.Reshape(1, self.mem_dim)(l_i_vec)
+      linput_r[i] = l_i_vec
+
+      r_i_vec = nn.SelectTable(i)(rinput)
+      r_i_vec = nn.Reshape(1, self.mem_dim)(r_i_vec)
+      rinput_r[i] = r_i_vec
+    end
+
+    lmat, rmat = nn.JoinTable(1)(linput_r), nn.JoinTable(1)(rinput_r)
+    inputs = {linput, rinput}
+
+  elseif self.structure == 'bilstm' then
+
+    local lf, lb, rf, rb = nn.Identity()(), nn.Identity()(), nn.Identity()(), nn.Identity()()
+
+    --[[
+    local lf_r, lb_r, rf_r, rb_r = {},{},{},{}
+    for i=1, self.num_layers do
+
+      lf_i_vec = nn.SelectTable(i)(lf)
+      lf_i_vec = nn.Reshape(1, self.mem_dim)(lf_i_vec)
+      lf_r[i] = lf_i_vec
+
+      lb_i_vec = nn.SelectTable(i)(lb)
+      lb_i_vec = nn.Reshape(1, self.mem_dim)(lb_i_vec)
+      lb_r[i] = lb_i_vec
+
+      rf_i_vec = nn.SelectTable(i)(rf)
+      rf_i_vec = nn.Reshape(1, self.mem_dim)(rf_i_vec)
+      rf_r[i] = rf_i_vec
+
+      rb_i_vec = nn.SelectTable(i)(rb)
+      rb_i_vec = nn.Reshape(1, self.mem_dim)(rb_i_vec)
+      rb_r[i] = rb_i_vec
+    end
+    --]]
+
+    lmat = nn.JoinTable(1){nn.JoinTable(1)(lf), nn.JoinTable(1)(lb)}
+    rmat = nn.JoinTable(1){nn.JoinTable(1)(rf), nn.JoinTable(1)(rb)}
+
+    --lf_mat = nn.JoinTable(1)(lf_r)
+    --lb_mat = nn.JoinTable(1)(lb_r)
+    --lmat = nn.JoinTable(1){lf_mat, lb_mat}
+
+    --rf_mat = nn.JoinTable(1)(rf_r)
+    --rb_mat = nn.JoinTable(1)(rb_r)
+    --rmat = nn.JoinTable(1){rf_mat, rb_mat}
+
+    inputs = {lf, lb, rf, rb}
+  end
+
+  local img_h = self.num_layers
+  local img_w = self.mem_dim
+
+  local mult_dist = nn.CMulTable(){lmat, rmat}
+
+  local add_dist = nn.Abs()(nn.CSubTable(){lmat, rmat})
+
+  --local radial_dist = nn.Exp()(nn.MulConstant(-0.25)(nn.Power(2)(add_dist)))
+
+  local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*2*img_h)(nn.JoinTable(1){lmat, rmat}))
+
+  local out_mat = nn.JoinTable(1){mult_dist, add_dist, max_dist}
+
+  num_plate = 6
+
+  out_mat = nn.Reshape(num_plate, img_h*img_w){out_mat}
+
+  vecs_to_input = nn.gModule(inputs, {out_mat})
+
+  local inputFrameSize = img_h*img_w
+  local outputFrameSize = 50
+  local kw = 3
+
+  local pool_kw = 2
+
+  local mlp_input_dim = (num_plate-kw+1-pool_kw+1) * outputFrameSize
+
+  local sim_module = nn.Sequential()
+    :add(vecs_to_input) -- 6 * 200
+    :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw))
+    :add(nn.Tanh())
+    :add(nn.TemporalMaxPooling(pool_kw, 1))
+    :add(nn.Reshape(mlp_input_dim))
     :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
     :add(nn.Sigmoid())    -- does better than tanh
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
