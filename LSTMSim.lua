@@ -174,9 +174,13 @@ function LSTMSim:new_sim_module_complex()
 
   local add_dist = nn.Abs()(nn.CSubTable(){lmat, rmat})
 
-  local radial_dist = nn.Exp()(nn.MulConstant(-0.25)(nn.Power(2)(add_dist)))
+  --local radial_dist = nn.Exp()(nn.MulConstant(-0.25)(nn.Power(2)(add_dist)))
 
-  local out_mat = nn.JoinTable(1){mult_dist, add_dist, radial_dist}
+  local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*2*img_h)(nn.JoinTable(1){lmat, rmat}))
+
+  local out_mat = nn.JoinTable(1){mult_dist, add_dist, max_dist}
+  --local out_mat = nn.JoinTable(1){mult_dist}
+  --local out_mat = radial_dist
 
   num_plate = 6
 
@@ -203,6 +207,7 @@ function LSTMSim:new_sim_module_complex()
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
     --:add(nn.SpatialConvolution(n_input_plane, n_output_plane, conv_kw, conv_kh))
+    
     :add(nn.LateralConvolution(n_input_plane, n_output_plane))
     :add(nn.VerticalConvolution(n_output_plane, n_output_plane, conv_kh))
     :add(nn.HorizontalConvolution(n_output_plane, n_output_plane, conv_kw))
@@ -215,6 +220,7 @@ function LSTMSim:new_sim_module_complex()
     :add(nn.Sigmoid())    -- does better than tanh
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
+
   return sim_module
 
 end
@@ -259,7 +265,6 @@ function LSTMSim:train(dataset)
             self.rlstm_b:forward(rinputs, true)
           }
         end
-
 
         local output = self.sim_module:forward(inputs)
         --dbg()
