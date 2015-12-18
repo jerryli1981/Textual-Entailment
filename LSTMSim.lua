@@ -41,7 +41,7 @@ function LSTMSim:__init(config)
     error('invalid LSTM type: ' .. self.structure)
   end
 
-  self.sim_module = self:new_sim_module_conv1d()
+  self.sim_module = self:new_sim_module_conv2d()
 
   local modules = nn.Parallel()
     :add(self.llstm)
@@ -105,91 +105,71 @@ end
 function LSTMSim:new_sim_module_conv2d()
   print('Using conv2d sim module, num_layers must > 2')
   local lmat, rmat, inputs
-  
-  local num_plate
 
   if self.structure == 'lstm' then
 
     local linput, rinput = nn.Identity()(), nn.Identity()()
-    
-    local linput_r,rinput_r = {},{}
-    for i=1, self.num_layers do
 
-      l_i_vec = nn.SelectTable(i)(linput)
-      l_i_vec = nn.Reshape(1, self.mem_dim)(l_i_vec)
-      linput_r[i] = l_i_vec
+    lmat = nn.Reshape(self.num_layers, self.mem_dim)(nn.JoinTable(1)(linput)) 
+    rmat = nn.Reshape(self.num_layers, self.mem_dim)(nn.JoinTable(1)(rinput))
 
-      r_i_vec = nn.SelectTable(i)(rinput)
-      r_i_vec = nn.Reshape(1, self.mem_dim)(r_i_vec)
-      rinput_r[i] = r_i_vec
-    end
-
-    lmat, rmat = nn.JoinTable(1)(linput_r), nn.JoinTable(1)(rinput_r)
     inputs = {linput, rinput}
 
   elseif self.structure == 'bilstm' then
 
     local lf, lb, rf, rb = nn.Identity()(), nn.Identity()(), nn.Identity()(), nn.Identity()()
 
-    --[[
-    local lf_r, lb_r, rf_r, rb_r = {},{},{},{}
-    for i=1, self.num_layers do
+    lfmat = nn.Reshape(self.num_layers, self.mem_dim)(nn.JoinTable(1)(lf)) 
+    lbmat = nn.Reshape(self.num_layers, self.mem_dim)(nn.JoinTable(1)(lb)) 
+    lmat = nn.JoinTable(2){lfmat, lbmat}
 
-      lf_i_vec = nn.SelectTable(i)(lf)
-      lf_i_vec = nn.Reshape(1, self.mem_dim)(lf_i_vec)
-      lf_r[i] = lf_i_vec
-
-      lb_i_vec = nn.SelectTable(i)(lb)
-      lb_i_vec = nn.Reshape(1, self.mem_dim)(lb_i_vec)
-      lb_r[i] = lb_i_vec
-
-      rf_i_vec = nn.SelectTable(i)(rf)
-      rf_i_vec = nn.Reshape(1, self.mem_dim)(rf_i_vec)
-      rf_r[i] = rf_i_vec
-
-      rb_i_vec = nn.SelectTable(i)(rb)
-      rb_i_vec = nn.Reshape(1, self.mem_dim)(rb_i_vec)
-      rb_r[i] = rb_i_vec
-    end
-    --]]
-
-    lmat = nn.JoinTable(1){nn.JoinTable(1)(lf), nn.JoinTable(1)(lb)}
-    rmat = nn.JoinTable(1){nn.JoinTable(1)(rf), nn.JoinTable(1)(rb)}
-
-    --lf_mat = nn.JoinTable(1)(lf_r)
-    --lb_mat = nn.JoinTable(1)(lb_r)
-    --lmat = nn.JoinTable(1){lf_mat, lb_mat}
-
-    --rf_mat = nn.JoinTable(1)(rf_r)
-    --rb_mat = nn.JoinTable(1)(rb_r)
-    --rmat = nn.JoinTable(1){rf_mat, rb_mat}
+    rfmat = nn.Reshape(self.num_layers, self.mem_dim)(nn.JoinTable(1)(rf)) 
+    rbmat = nn.Reshape(self.num_layers, self.mem_dim)(nn.JoinTable(1)(rb)) 
+    rmat = nn.JoinTable(2){rfmat, rbmat}
 
     inputs = {lf, lb, rf, rb}
   end
 
+
+  local lmat_s = nn.SplitTable(1)(lmat)
+  local rmat_s = nn.SplitTable(1)(rmat)
+
+  local cos_mat = {}
+  local radio_mat = {}
+  for i=1, self.num_layers do
+    local lvec = nn.SelectTable(i)(lmat_s)
+    for j=1, self.num_layers do
+      local rvec = nn.SelectTable(j)(rmat_s)
+      local cosine_dist = nn.CosineDistance(){lvec, rvec}
+      local euclidean_dist = nn.PairwiseDistance(2){lvec, rvec}
+      local radial_dist = nn.Exp()(nn.MulConstant(-0.25)(nn.Power(2)(euclidean_dist)))
+      table.insert(cos_mat, cosine_dist)
+      table.insert(radio_mat, radial_dist)
+    end
+  end
+
+  cos_mat = nn.Identity()(cos_mat)
+  cos_mat = nn.JoinTable(1){cos_mat}
+  cos_mat = nn.Reshape(self.num_layers, self.num_layers){cos_mat}
+
+  radio_mat = nn.Identity()(radio_mat)
+  radio_mat = nn.JoinTable(1){radio_mat}
+  radio_mat = nn.Reshape(self.num_layers, self.num_layers){radio_mat}
+
+
   local img_h = self.num_layers
-  local img_w = self.mem_dim
+  local img_w = self.num_layers
 
-  local mult_dist = nn.CMulTable(){lmat, rmat}
+  local num_plate = 2
 
-  local add_dist = nn.Abs()(nn.CSubTable(){lmat, rmat})
-
-  --local radial_dist = nn.Exp()(nn.MulConstant(-0.25)(nn.Power(2)(add_dist)))
-
-  local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*2*img_h)(nn.JoinTable(1){lmat, rmat}))
-
-  local out_mat = nn.JoinTable(1){mult_dist, add_dist, max_dist}
-
-  num_plate = 6
-
-  out_mat = nn.Reshape(num_plate, img_h, img_w){out_mat}
+  out_mat = nn.Reshape(num_plate, img_h, img_w)(nn.JoinTable(1){cos_mat, radio_mat})
 
   vecs_to_input = nn.gModule(inputs, {out_mat})
 
   local conv_kw = img_w
   local conv_kh = 2
   local n_input_plane = num_plate
-  local n_output_plane = 2
+  local n_output_plane = num_plate
   local pool_kw = 1
   local pool_kh = 2
 
@@ -200,25 +180,21 @@ function LSTMSim:new_sim_module_conv2d()
 
   local mlp_input_dim = n_output_plane*pool_out_h*pool_out_w
 
-  --local mlp_input_dim = 4 * self.num_layers * self.mem_dim
-
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
-    --:add(nn.SpatialConvolution(n_input_plane, n_output_plane, conv_kw, conv_kh))
-    
     :add(nn.LateralConvolution(n_input_plane, n_output_plane))
     :add(nn.VerticalConvolution(n_output_plane, n_output_plane, conv_kh))
     :add(nn.HorizontalConvolution(n_output_plane, n_output_plane, conv_kw))
     :add(nn.Tanh())
     :add(nn.SpatialMaxPooling(pool_kw, pool_kh, 1, 1))
-    :add(nn.SpatialSubtractiveNormalization(n_output_plane, image.gaussian1D(7)))
+    --:add(nn.SpatialSubtractiveNormalization(n_output_plane, image.gaussian1D(7)))
     :add(nn.Reshape(mlp_input_dim))
     :add(HighwayMLP.mlp(mlp_input_dim, 1))
     :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
     :add(nn.Sigmoid())    -- does better than tanh
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
-
+    
   return sim_module
 
 end
