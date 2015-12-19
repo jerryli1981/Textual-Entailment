@@ -41,7 +41,7 @@ function LSTMSim:__init(config)
     error('invalid LSTM type: ' .. self.structure)
   end
 
-  self.sim_module = self:new_sim_module_conv2d()
+  self.sim_module = self:new_sim_module_conv1d()
 
   local modules = nn.Parallel()
     :add(self.llstm)
@@ -130,12 +130,12 @@ function LSTMSim:new_sim_module_conv2d()
     inputs = {lf, lb, rf, rb}
   end
 
-
   local lmat_s = nn.SplitTable(1)(lmat)
   local rmat_s = nn.SplitTable(1)(rmat)
 
   local cos_mat = {}
   local radio_mat = {}
+  local p1_mat = {}
   for i=1, self.num_layers do
     local lvec = nn.SelectTable(i)(lmat_s)
     for j=1, self.num_layers do
@@ -143,8 +143,10 @@ function LSTMSim:new_sim_module_conv2d()
       local cosine_dist = nn.CosineDistance(){lvec, rvec}
       local euclidean_dist = nn.PairwiseDistance(2){lvec, rvec}
       local radial_dist = nn.Exp()(nn.MulConstant(-0.25)(nn.Power(2)(euclidean_dist)))
+      local p1_dist = nn.PairwiseDistance(1){lvec, rvec}
       table.insert(cos_mat, cosine_dist)
       table.insert(radio_mat, radial_dist)
+      table.insert(p1_mat, p1_dist)
     end
   end
 
@@ -156,13 +158,17 @@ function LSTMSim:new_sim_module_conv2d()
   radio_mat = nn.JoinTable(1){radio_mat}
   radio_mat = nn.Reshape(self.num_layers, self.num_layers){radio_mat}
 
+  p1_mat = nn.Identity()(p1_mat)
+  p1_mat = nn.JoinTable(1){p1_mat}
+  p1_mat = nn.Reshape(self.num_layers, self.num_layers){p1_mat}
+
 
   local img_h = self.num_layers
   local img_w = self.num_layers
 
-  local num_plate = 2
+  local num_plate = 3
 
-  out_mat = nn.Reshape(num_plate, img_h, img_w)(nn.JoinTable(1){cos_mat, radio_mat})
+  out_mat = nn.Reshape(num_plate, img_h, img_w)(nn.JoinTable(1){cos_mat, radio_mat, p1_mat})
 
   vecs_to_input = nn.gModule(inputs, {out_mat})
 
@@ -187,9 +193,9 @@ function LSTMSim:new_sim_module_conv2d()
     :add(nn.HorizontalConvolution(n_output_plane, n_output_plane, conv_kw))
     :add(nn.Tanh())
     :add(nn.SpatialMaxPooling(pool_kw, pool_kh, 1, 1))
-    --:add(nn.SpatialSubtractiveNormalization(n_output_plane, image.gaussian1D(7)))
+    :add(nn.SpatialSubtractiveNormalization(n_output_plane, image.gaussian1D(7)))
     :add(nn.Reshape(mlp_input_dim))
-    :add(HighwayMLP.mlp(mlp_input_dim, 1))
+    --:add(HighwayMLP.mlp(mlp_input_dim, 1))
     :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
     :add(nn.Sigmoid())    -- does better than tanh
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
@@ -201,67 +207,60 @@ end
 
 function LSTMSim:new_sim_module_conv1d()
   print('Using conv1d sim module, num_layers must > 2')
-  local lmat, rmat, inputs
-  
+
+  local img_h = self.num_layers
+  local img_w = self.mem_dim 
   local num_plate
+  local inputFrameSize
 
   if self.structure == 'lstm' then
 
+    num_plate=3
     local linput, rinput = nn.Identity()(), nn.Identity()()
-    
-    local linput_r,rinput_r = {},{}
-    for i=1, self.num_layers do
 
-      l_i_vec = nn.SelectTable(i)(linput)
-      l_i_vec = nn.Reshape(1, self.mem_dim)(l_i_vec)
-      linput_r[i] = l_i_vec
+    local lmat = nn.JoinTable(1)(linput)
+    local rmat = nn.JoinTable(1)(rinput)
 
-      r_i_vec = nn.SelectTable(i)(rinput)
-      r_i_vec = nn.Reshape(1, self.mem_dim)(r_i_vec)
-      rinput_r[i] = r_i_vec
-    end
+    local mult_dist = nn.CMulTable(){lmat, rmat}
+    local add_dist = nn.Abs()(nn.CSubTable(){lmat, rmat})
+    local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*img_h)(nn.JoinTable(1){lmat, rmat}))
+    local out_mat = nn.Reshape(num_plate, img_h*img_w)(nn.JoinTable(1){mult_dist, add_dist, max_dist})
 
-    lmat, rmat = nn.JoinTable(1)(linput_r), nn.JoinTable(1)(rinput_r)
-    inputs = {linput, rinput}
+    local inputs = {linput, rinput}
+    vecs_to_input = nn.gModule(inputs, {out_mat})
+    inputFrameSize = img_h*img_w
 
   elseif self.structure == 'bilstm' then
+    num_plate=6
 
     local lf, lb, rf, rb = nn.Identity()(), nn.Identity()(), nn.Identity()(), nn.Identity()()
 
-    lmat = nn.JoinTable(1){nn.JoinTable(1)(lf), nn.JoinTable(1)(lb)}
-    rmat = nn.JoinTable(1){nn.JoinTable(1)(rf), nn.JoinTable(1)(rb)}
+    local lmat = nn.JoinTable(1){nn.JoinTable(1)(lf), nn.JoinTable(1)(lb)}
+    local rmat = nn.JoinTable(1){nn.JoinTable(1)(rf), nn.JoinTable(1)(rb)}
 
-    inputs = {lf, lb, rf, rb}
+    local mult_dist = nn.CMulTable(){lmat, rmat}
+    local add_dist = nn.Abs()(nn.CSubTable(){lmat, rmat})
+    local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*2*img_h)(nn.JoinTable(1){lmat, rmat}))
+    local out_mat = nn.Reshape(num_plate, img_h*img_w)(nn.JoinTable(1){mult_dist, add_dist, max_dist})
+
+    local inputs = {lf, lb, rf, rb}
+    vecs_to_input = nn.gModule(inputs, {out_mat})
+    inputFrameSize = img_h*img_w
+
   end
 
-  local img_h = self.num_layers
-  local img_w = self.mem_dim
-
-  local mult_dist = nn.CMulTable(){lmat, rmat}
-  local add_dist = nn.Abs()(nn.CSubTable(){lmat, rmat})
-  local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*2*img_h)(nn.JoinTable(1){lmat, rmat}))
-
-  local out_mat = nn.JoinTable(1){mult_dist, add_dist, max_dist}
-
-  num_plate = 6
-
-  out_mat = nn.Reshape(num_plate, img_h*img_w){out_mat}
-
-  vecs_to_input = nn.gModule(inputs, {out_mat})
-
-  local inputFrameSize = img_h*img_w
   local outputFrameSize = 50
   local kw = 3
-
+  --local pool_kw = num_plate-kw+1 --max over time pooling
   local pool_kw = 2
-
   local mlp_input_dim = (num_plate-kw+1-pool_kw+1) * outputFrameSize
   --local outputFrameSize2 = 10
   --local kw2=2
   --local mlp_input_dim2 = (num_plate-kw+1-pool_kw+1-kw2+1-pool_kw+1) * 10
 
   local sim_module = nn.Sequential()
-    :add(vecs_to_input) -- 6 * 200
+    :add(vecs_to_input)
+
     :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw))
     :add(nn.Tanh())
     :add(nn.TemporalMaxPooling(pool_kw, 1))
@@ -272,6 +271,7 @@ function LSTMSim:new_sim_module_conv1d()
     --:add(nn.Reshape(mlp_input_dim2))
     --:add(HighwayMLP.mlp(mlp_input_dim2, 1))
     --:add(nn.Linear(mlp_input_dim2, self.sim_nhidden))
+
 
     :add(nn.Reshape(mlp_input_dim))
     :add(HighwayMLP.mlp(mlp_input_dim, 1))
