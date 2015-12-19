@@ -231,7 +231,7 @@ function LSTMSim:new_sim_module_conv1d()
     inputFrameSize = img_h*img_w
 
   elseif self.structure == 'bilstm' then
-    num_plate=6
+    num_plate=4
 
     local lf, lb, rf, rb = nn.Identity()(), nn.Identity()(), nn.Identity()(), nn.Identity()()
 
@@ -240,7 +240,7 @@ function LSTMSim:new_sim_module_conv1d()
 
     local mult_dist = nn.CMulTable(){lmat, rmat}
     local add_dist = nn.Abs()(nn.CSubTable(){lmat, rmat})
-    local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*2*img_h)(nn.JoinTable(1){lmat, rmat}))
+    --local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*2*img_h)(nn.JoinTable(1){lmat, rmat}))
     local out_mat = nn.Reshape(num_plate, img_h*img_w)(nn.JoinTable(1){mult_dist, add_dist, max_dist})
 
     local inputs = {lf, lb, rf, rb}
@@ -250,14 +250,13 @@ function LSTMSim:new_sim_module_conv1d()
   end
 
   local outputFrameSize = 50
-  local kw = 3
+  local kw = 2
   --local pool_kw = num_plate-kw+1 --max over time pooling
   local pool_kw = 2
   local mlp_input_dim = (num_plate-kw+1-pool_kw+1) * outputFrameSize
   --local outputFrameSize2 = 10
   --local kw2=2
   --local mlp_input_dim2 = (num_plate-kw+1-pool_kw+1-kw2+1-pool_kw+1) * 10
-
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
 
@@ -276,7 +275,8 @@ function LSTMSim:new_sim_module_conv1d()
     :add(nn.Reshape(mlp_input_dim))
     :add(HighwayMLP.mlp(mlp_input_dim, 1))
     :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
-    :add(nn.Sigmoid())    -- does better than tanh
+    --:add(nn.Sigmoid())    -- does better than tanh
+    :add(nn.ReLU())
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
 
