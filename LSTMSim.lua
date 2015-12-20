@@ -41,7 +41,7 @@ function LSTMSim:__init(config)
     error('invalid LSTM type: ' .. self.structure)
   end
 
-  self.sim_module = self:new_sim_module_conv1d()
+  self.sim_module = self:new_sim_module_conv2d()
 
   local modules = nn.Parallel()
     :add(self.llstm)
@@ -136,17 +136,19 @@ function LSTMSim:new_sim_module_conv2d()
   local cos_mat = {}
   local radio_mat = {}
   local p1_mat = {}
+  local dot_mat = {}
   for i=1, self.num_layers do
     local lvec = nn.SelectTable(i)(lmat_s)
     for j=1, self.num_layers do
       local rvec = nn.SelectTable(j)(rmat_s)
       local cosine_dist = nn.CosineDistance(){lvec, rvec}
-      local euclidean_dist = nn.PairwiseDistance(2){lvec, rvec}
-      local radial_dist = nn.Exp()(nn.MulConstant(-0.25)(nn.Power(2)(euclidean_dist)))
+      local radial_dist = nn.Exp()(nn.MulConstant(-0.25)(nn.Power(2)(nn.PairwiseDistance(2){lvec, rvec})))
       local p1_dist = nn.PairwiseDistance(1){lvec, rvec}
+      local dot_dist = nn.DotProduct(){lvec, rvec}
       table.insert(cos_mat, cosine_dist)
       table.insert(radio_mat, radial_dist)
       table.insert(p1_mat, p1_dist)
+      table.insert(dot_mat, dot_dist)
     end
   end
 
@@ -162,21 +164,27 @@ function LSTMSim:new_sim_module_conv2d()
   p1_mat = nn.JoinTable(1){p1_mat}
   p1_mat = nn.Reshape(self.num_layers, self.num_layers){p1_mat}
 
+  dot_mat = nn.Identity()(dot_mat)
+  dot_mat = nn.JoinTable(1){dot_mat}
+  dot_mat = nn.Reshape(self.num_layers, self.num_layers){dot_mat}
+
 
   local img_h = self.num_layers
   local img_w = self.num_layers
 
-  local num_plate = 3
+  --local num_plate = 3
+  --out_mat = nn.Reshape(num_plate, img_h, img_w)(nn.JoinTable(1){cos_mat, radio_mat, p1_mat})
 
-  out_mat = nn.Reshape(num_plate, img_h, img_w)(nn.JoinTable(1){cos_mat, radio_mat, p1_mat})
+  local num_plate = 4
+  out_mat = nn.Reshape(num_plate, img_h, img_w)(nn.JoinTable(1){cos_mat, radio_mat, p1_mat, dot_mat})
 
   vecs_to_input = nn.gModule(inputs, {out_mat})
 
-  local conv_kw = img_w
+  local conv_kw = 2
   local conv_kh = 2
   local n_input_plane = num_plate
   local n_output_plane = num_plate
-  local pool_kw = 1
+  local pool_kw = 2
   local pool_kh = 2
 
   local cov_out_h = img_h - conv_kh + 1
@@ -193,12 +201,14 @@ function LSTMSim:new_sim_module_conv2d()
     :add(nn.HorizontalConvolution(n_output_plane, n_output_plane, conv_kw))
     :add(nn.Tanh())
     :add(nn.SpatialMaxPooling(pool_kw, pool_kh, 1, 1))
-    :add(nn.SpatialSubtractiveNormalization(n_output_plane, image.gaussian1D(7)))
+    --:add(nn.SpatialSubtractiveNormalization(n_output_plane, image.gaussian1D(7)))
     :add(nn.Reshape(mlp_input_dim))
-    --:add(HighwayMLP.mlp(mlp_input_dim, 1))
-    :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
-    :add(nn.Sigmoid())    -- does better than tanh
-    :add(nn.Linear(self.sim_nhidden, self.num_classes))
+    
+    --:add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
+    --:add(nn.Linear(mlp_input_dim, self.sim_nhidden))
+    --:add(nn.Sigmoid()) 
+    --:add(nn.Linear(self.sim_nhidden, self.num_classes))
+    :add(nn.Linear(mlp_input_dim, self.num_classes))
     :add(nn.LogSoftMax())
     
   return sim_module
@@ -274,7 +284,7 @@ function LSTMSim:new_sim_module_conv1d()
     :add(nn.Reshape(mlp_input_dim))
     :add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
     :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
-    :add(nn.Sigmoid()) --Tanh best dev score: 0.8420 -- ReLU best dev score: 0.8380
+    :add(nn.Sigmoid()) --Tanh best dev score: 0.8320(0.8157), -- ReLU best dev score: 0.8380(0.8299) --Sigmoid best dev score: 0.8540(0.8321)
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
 

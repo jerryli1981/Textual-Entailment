@@ -113,6 +113,7 @@ for i = 1, num_epochs do
     best_dev_model.params:copy(model.params)
     --]]
 
+    --[[
     -- evaluate
     header('Evaluating on test set')
     printf('-- using model with dev score = %.4f\n', best_dev_score)
@@ -122,10 +123,11 @@ for i = 1, num_epochs do
     if test_score > best_test_score then
       best_test_score = test_score
     end
-
+    --]]
   end
 end
 
+printf('-- best dev score: %.4f\n', best_dev_score)
 printf('-- best test score: %.4f\n', best_test_score)
 
 --[[
