@@ -271,12 +271,10 @@ function LSTMSim:new_sim_module_conv1d()
     --:add(HighwayMLP.mlp(mlp_input_dim2, 1))
     --:add(nn.Linear(mlp_input_dim2, self.sim_nhidden))
 
-
     :add(nn.Reshape(mlp_input_dim))
-    :add(HighwayMLP.mlp(mlp_input_dim, 1))
+    :add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
     :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
-    --:add(nn.Sigmoid())    -- does better than tanh
-    :add(nn.ReLU())
+    :add(nn.Sigmoid()) --Tanh best dev score: 0.8420 -- ReLU best dev score: 0.8380
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
 
