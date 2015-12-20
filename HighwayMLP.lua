@@ -8,14 +8,15 @@ function HighwayMLP.mlp(input_dim, num_layers, bias, f)
     
     local output, transform_gate, carry_gate
     local num_layers = num_layers or 1
-    local bias = bias or -2
-    local f = f or nn.ReLU()
+    --local bias = bias or -2
+    local f = f
     local input = nn.Identity()()
     local inputs = {[1]=input}
 
     for i = 1, num_layers do        
         output = f(nn.Linear(input_dim, input_dim)(inputs[i]))
-        transform_gate = nn.Sigmoid()(nn.AddConstant(bias)(nn.Linear(input_dim, input_dim)(inputs[i])))
+        --transform_gate = nn.Sigmoid()(nn.AddConstant(bias)(nn.Linear(input_dim, input_dim)(inputs[i])))
+        transform_gate = nn.Sigmoid()(nn.Linear(input_dim, input_dim)(inputs[i]))
         carry_gate = nn.AddConstant(1)(nn.MulConstant(-1)(transform_gate))
 
     	output = nn.CAddTable()({
