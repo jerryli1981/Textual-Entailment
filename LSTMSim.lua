@@ -137,6 +137,7 @@ function LSTMSim:new_sim_module_conv2d()
   local radio_mat = {}
   local p1_mat = {}
   local dot_mat = {}
+  local conv1d_mat = {}
   for i=1, self.num_layers do
     local lvec = nn.SelectTable(i)(lmat_s)
     for j=1, self.num_layers do
@@ -145,10 +146,26 @@ function LSTMSim:new_sim_module_conv2d()
       local radial_dist = nn.Exp()(nn.MulConstant(-0.25)(nn.Power(2)(nn.PairwiseDistance(2){lvec, rvec})))
       local p1_dist = nn.PairwiseDistance(1){lvec, rvec}
       local dot_dist = nn.DotProduct(){lvec, rvec}
+
+      local conv1d_dist
+
+      if self.structure == 'lstm' then
+
+        conv1d_dist = nn.TemporalConvolution(self.mem_dim,1,2,1)
+        (nn.Reshape(2, self.mem_dim)(nn.JoinTable(1){lvec,rvec}))
+
+      elseif self.structure == 'bilstm' then
+
+        conv1d_dist = nn.TemporalConvolution(2*self.mem_dim,1,2,1)
+        (nn.Reshape(2, 2*self.mem_dim)(nn.JoinTable(1){lvec,rvec}))
+
+      end
+
       table.insert(cos_mat, cosine_dist)
       table.insert(radio_mat, radial_dist)
       table.insert(p1_mat, p1_dist)
       table.insert(dot_mat, dot_dist)
+      table.insert(conv1d_mat, conv1d_dist)
     end
   end
 
@@ -168,6 +185,10 @@ function LSTMSim:new_sim_module_conv2d()
   dot_mat = nn.JoinTable(1){dot_mat}
   dot_mat = nn.Reshape(self.num_layers, self.num_layers){dot_mat}
 
+  conv1d_mat = nn.Identity()(conv1d_mat)
+  conv1d_mat = nn.JoinTable(1){conv1d_mat}
+  conv1d_mat = nn.Reshape(self.num_layers, self.num_layers){conv1d_mat}
+
 
   local img_h = self.num_layers
   local img_w = self.num_layers
@@ -175,8 +196,8 @@ function LSTMSim:new_sim_module_conv2d()
   --local num_plate = 3
   --out_mat = nn.Reshape(num_plate, img_h, img_w)(nn.JoinTable(1){cos_mat, radio_mat, p1_mat})
 
-  local num_plate = 4
-  out_mat = nn.Reshape(num_plate, img_h, img_w)(nn.JoinTable(1){cos_mat, radio_mat, p1_mat, dot_mat})
+  local num_plate = 5
+  out_mat = nn.Reshape(num_plate, img_h, img_w)(nn.JoinTable(1){cos_mat, radio_mat, p1_mat, dot_mat, conv1d_mat})
 
   vecs_to_input = nn.gModule(inputs, {out_mat})
 
@@ -196,12 +217,13 @@ function LSTMSim:new_sim_module_conv2d()
 
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
+    
     :add(nn.LateralConvolution(n_input_plane, n_output_plane))
     :add(nn.VerticalConvolution(n_output_plane, n_output_plane, conv_kh))
     :add(nn.HorizontalConvolution(n_output_plane, n_output_plane, conv_kw))
-    :add(nn.Tanh())
+    :add(nn.Sigmoid())
     :add(nn.SpatialMaxPooling(pool_kw, pool_kh, 1, 1))
-    --:add(nn.SpatialSubtractiveNormalization(n_output_plane, image.gaussian1D(7)))
+    :add(nn.SpatialSubtractiveNormalization(n_output_plane, image.gaussian1D(7)))
     :add(nn.Reshape(mlp_input_dim))
     
     --:add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
