@@ -219,7 +219,7 @@ function LSTMSim:new_sim_module_conv2d()
     :add(nn.HorizontalConvolution(n_output_plane, n_output_plane, conv_kw))
     :add(nn.Sigmoid())
     :add(nn.SpatialMaxPooling(pool_kw, pool_kh, 1, 1))
-    :add(nn.SpatialSubtractiveNormalization(n_output_plane, image.gaussian1D(7)))
+    --:add(nn.SpatialSubtractiveNormalization(n_output_plane, image.gaussian1D(7)))
     :add(nn.Reshape(mlp_input_dim))
     
     --:add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))

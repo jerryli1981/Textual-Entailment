@@ -85,7 +85,10 @@ while true do
 end
 
 local model
-if args.load == nil then
+if args.load == 'true' then
+  print('using previous model ' .. model_save_pre_path)
+  model = model_class.load(model_save_pre_path)
+else
   print('initialize new model')
   model = model_class{
     emb_vecs   = vecs,
@@ -94,9 +97,6 @@ if args.load == nil then
     num_layers = args.num_layers,
     sim_nhidden = args.sim_nhidden
   }
-elseif args.load == 'true' then
-  print('using previous model ' .. model_save_pre_path)
-  model = model_class.load(model_save_pre_path)
 end
 
 -- number of epochs to train
