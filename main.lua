@@ -12,7 +12,8 @@ Training script for semantic relatedness prediction on the SICK dataset.
   -l,--num_layers (default 1)          Number of layers
   -h,--sim_nhidden (default 50)    number of sim_hidden
   -s,--structure (default lstm)   lstm structure
-  -g,--debug  (default nil)       debug setting   
+  -g,--debug  (default nil)       debug setting  
+  -o,--load (default nil)         using previous model
 
 ]]
 
@@ -67,13 +68,36 @@ elseif args.model == "seqLSTM" then
   model_class = LSTMSim
 end
 
-local model = model_class{
-  emb_vecs   = vecs,
-  mem_dim    = args.dim,
-  structure = args.structure,
-  num_layers = args.num_layers,
-  sim_nhidden = args.sim_nhidden
-}
+-- get paths
+local file_idx = 1
+local predictions_save_path, model_save_path, model_save_pre_path
+while true do
+  predictions_save_path = string.format(
+    predictions_dir .. '/ent-%s.%dl.%dd.%d.pred', args.model, args.num_layers, args.dim, file_idx)
+  model_save_path = string.format(
+    models_dir .. '/ent-%s.%dl.%dd.%d.th', args.model, args.num_layers, args.dim, file_idx)
+  model_save_pre_path = string.format(
+    models_dir .. '/ent-%s.%dl.%dd.%d.th', args.model, args.num_layers, args.dim, file_idx-1)
+  if lfs.attributes(predictions_save_path) == nil and lfs.attributes(model_save_path) == nil then
+    break
+  end
+  file_idx = file_idx + 1
+end
+
+local model
+if args.load == nil then
+  print('initialize new model')
+  model = model_class{
+    emb_vecs   = vecs,
+    mem_dim    = args.dim,
+    structure = args.structure,
+    num_layers = args.num_layers,
+    sim_nhidden = args.sim_nhidden
+  }
+elseif args.load == 'true' then
+  print('using previous model ' .. model_save_pre_path)
+  model = model_class.load(model_save_pre_path)
+end
 
 -- number of epochs to train
 local num_epochs = args.epochs
@@ -137,19 +161,7 @@ if lfs.attributes(models_dir) == nil then
   lfs.mkdir(models_dir)
 end
 
--- get paths
-local file_idx = 1
-local predictions_save_path, model_save_path
-while true do
-  predictions_save_path = string.format(
-    predictions_dir .. '/ent-%s.%dl.%dd.%d.pred', args.model, args.num_layers, args.dim, file_idx)
-  model_save_path = string.format(
-    models_dir .. '/ent-%s.%dl.%dd.%d.th', args.model, args.num_layers, args.dim, file_idx)
-  if lfs.attributes(predictions_save_path) == nil and lfs.attributes(model_save_path) == nil then
-    break
-  end
-  file_idx = file_idx + 1
-end
+
 
 -- write predictions to disk
 local predictions_file = torch.DiskFile(predictions_save_path, 'w')
@@ -164,5 +176,4 @@ predictions_file:close()
 print('writing model to ' .. model_save_path)
 best_dev_model:save(model_save_path)
 
---to load a saved model
---local loaded = model_class.load(model_save_path)
+
