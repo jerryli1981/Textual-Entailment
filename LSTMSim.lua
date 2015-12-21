@@ -2,7 +2,8 @@ local LSTMSim = torch.class('LSTMSim')
 
 function LSTMSim:__init(config)
   self.mem_dim       = config.mem_dim       or 150
-  self.learning_rate = config.learning_rate or 0.05
+  --self.learning_rate = config.learning_rate or 0.05
+  self.learning_rate = config.learning_rate or 1.0
   self.batch_size    = config.batch_size    or 25
   self.reg           = config.reg           or 1e-4
   self.sim_nhidden   = config.sim_nhidden   or 50
@@ -189,12 +190,8 @@ function LSTMSim:new_sim_module_conv2d()
   conv1d_mat = nn.JoinTable(1){conv1d_mat}
   conv1d_mat = nn.Reshape(self.num_layers, self.num_layers){conv1d_mat}
 
-
   local img_h = self.num_layers
   local img_w = self.num_layers
-
-  --local num_plate = 3
-  --out_mat = nn.Reshape(num_plate, img_h, img_w)(nn.JoinTable(1){cos_mat, radio_mat, p1_mat})
 
   local num_plate = 5
   out_mat = nn.Reshape(num_plate, img_h, img_w)(nn.JoinTable(1){cos_mat, radio_mat, p1_mat, dot_mat, conv1d_mat})
@@ -383,8 +380,8 @@ function LSTMSim:train(dataset)
       self.grad_params:add(self.reg, self.params)
       return loss, self.grad_params
     end
-
-    optim.adagrad(feval, self.params, self.optim_state)
+    --optim.adagrad(feval, self.params, self.optim_state)
+    optim.sgd(feval, self.params, self.optim_state)
   end
   xlua.progress(dataset.size, dataset.size)
 end
@@ -503,3 +500,42 @@ function LSTMSim:print_config()
   printf('%-25s = %d\n',   'LSTM layers', self.num_layers)
   printf('%-25s = %d\n',   'sim module hidden dim', self.sim_nhidden)
 end
+
+--
+--Serialization
+--
+function LSTMSim:save(path)
+  local config = {
+    batch_size = self.batch_size,
+    emb_vecs = self.emb_vecs:float(),
+    learning_rate = self.learning_rate,
+    num_layers = self.num_layers,
+    mem_dim = self.mem_dim,
+    sim_nhidden = self.sim_nhidden,
+    reg = self.reg,
+    structure = self.structure,
+  }
+
+  torch.save(path, {
+    params = self.params,
+    config = config,
+    })
+
+end
+
+function LSTMSim.load(path)
+  local state = torch.load(path)
+  local model = LSTMSim.new(state.config)
+  model.params:copy(state.params)
+  return model
+end
+
+
+
+
+
+
+
+
+
+

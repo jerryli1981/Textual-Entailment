@@ -24,6 +24,9 @@ torch.setnumthreads(4)
 
 printf = utils.printf
 
+models_dir = 'trained_models'
+predictions_dir = 'predictions'
+
 -- share module parameters
 function share_params(cell, src)
   if torch.type(cell) == 'nn.gModule' then

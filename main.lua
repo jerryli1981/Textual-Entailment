@@ -87,7 +87,7 @@ model:print_config()
 local train_start = sys.clock()
 local best_dev_score = -1.0
 local best_dev_model = model
-local best_test_score = -1.0
+
 header('Training model')
 for i = 1, num_epochs do
   local start = sys.clock()
@@ -102,7 +102,7 @@ for i = 1, num_epochs do
 
   if dev_score >= best_dev_score then
     best_dev_score = dev_score
-    --[[
+
     best_dev_model = model_class{
       emb_vecs   = vecs,
       mem_dim    = args.dim,
@@ -110,27 +110,14 @@ for i = 1, num_epochs do
       num_layers = args.num_layers,
       sim_nhidden = args.sim_nhidden
     }
-    best_dev_model.params:copy(model.params)
-    --]]
 
-    --[[
-    -- evaluate
-    header('Evaluating on test set')
-    printf('-- using model with dev score = %.4f\n', best_dev_score)
-    local test_predictions = model:predict_dataset(test_dataset)
-    local test_score = accuracy(test_predictions, test_dataset.labels)
-    printf('-- test score: %.4f\n', test_score)
-    if test_score > best_test_score then
-      best_test_score = test_score
-    end
-    --]]
+    best_dev_model.params:copy(model.params)
+
   end
 end
 
 printf('-- best dev score: %.4f\n', best_dev_score)
-printf('-- best test score: %.4f\n', best_test_score)
 
---[[
 printf('finished training in %.2fs\n', sys.clock() - train_start)
 
 -- evaluate
@@ -139,4 +126,43 @@ printf('-- using model with dev score = %.4f\n', best_dev_score)
 local test_predictions = best_dev_model:predict_dataset(test_dataset)
 local test_score = accuracy(test_predictions, test_dataset.labels)
 printf('-- test score: %.4f\n', test_score)
---]]
+
+
+-- create predictions and model directories if necessary
+if lfs.attributes(predictions_dir) == nil then
+  lfs.mkdir(predictions_dir)
+end
+
+if lfs.attributes(models_dir) == nil then
+  lfs.mkdir(models_dir)
+end
+
+-- get paths
+local file_idx = 1
+local predictions_save_path, model_save_path
+while true do
+  predictions_save_path = string.format(
+    predictions_dir .. '/ent-%s.%dl.%dd.%d.pred', args.model, args.num_layers, args.dim, file_idx)
+  model_save_path = string.format(
+    models_dir .. '/ent-%s.%dl.%dd.%d.th', args.model, args.num_layers, args.dim, file_idx)
+  if lfs.attributes(predictions_save_path) == nil and lfs.attributes(model_save_path) == nil then
+    break
+  end
+  file_idx = file_idx + 1
+end
+
+-- write predictions to disk
+local predictions_file = torch.DiskFile(predictions_save_path, 'w')
+print('writing predictions to ' .. predictions_save_path)
+for i = 1, test_predictions:size(1) do
+  predictions_file:writeFloat(test_predictions[i])
+end
+predictions_file:close()
+
+
+--write models to disk
+print('writing model to ' .. model_save_path)
+best_dev_model:save(model_save_path)
+
+--to load a saved model
+--local loaded = model_class.load(model_save_path)
