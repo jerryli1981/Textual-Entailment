@@ -13,6 +13,7 @@ function TreeLSTMSim:__init(config)
   self.emb = nn.LookupTable(config.emb_vecs:size(1), self.emb_dim)
   self.emb.weight:copy(config.emb_vecs)
 
+
   self.num_classes = 3
 
   -- optimizer configuration
@@ -33,7 +34,7 @@ function TreeLSTMSim:__init(config)
   self.treelstm = ChildSumTreeLSTM(treelstm_config)
 
   -- similarity model
-  self.sim_module = self:new_sim_module_CNN()
+  self.sim_module = self:new_sim_module()
 
   local modules = nn.Parallel()
     :add(self.treelstm)

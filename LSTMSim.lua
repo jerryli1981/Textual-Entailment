@@ -237,16 +237,18 @@ function LSTMSim:new_sim_module_conv2d()
 end
 
 function LSTMSim:new_sim_module_conv1d()
-  print('Using conv1d sim module, num_layers must > 2')
+  print('Using conv1d sim module')
 
   local img_h = self.num_layers
   local img_w = self.mem_dim 
+
   local num_plate
   local inputFrameSize
 
   if self.structure == 'lstm' then
 
-    num_plate=3
+    num_plate=2
+
     local linput, rinput = nn.Identity()(), nn.Identity()()
 
     local lmat = nn.JoinTable(1)(linput)
@@ -254,33 +256,41 @@ function LSTMSim:new_sim_module_conv1d()
 
     local mult_dist = nn.CMulTable(){lmat, rmat}
     local add_dist = nn.Abs()(nn.CSubTable(){lmat, rmat})
-    local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*img_h)(nn.JoinTable(1){lmat, rmat}))
-    local out_mat = nn.Reshape(num_plate, img_h*img_w)(nn.JoinTable(1){mult_dist, add_dist, max_dist})
+    --local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*img_h)(nn.JoinTable(1){lmat, rmat}))
+    local out_mat = nn.Reshape(num_plate, img_h*img_w)(nn.JoinTable(1){mult_dist, add_dist})
 
     local inputs = {linput, rinput}
     vecs_to_input = nn.gModule(inputs, {out_mat})
     inputFrameSize = img_h*img_w
 
   elseif self.structure == 'bilstm' then
-    num_plate=4
 
     local lf, lb, rf, rb = nn.Identity()(), nn.Identity()(), nn.Identity()(), nn.Identity()()
 
-    local lmat = nn.JoinTable(1){nn.JoinTable(1)(lf), nn.JoinTable(1)(lb)}
-    local rmat = nn.JoinTable(1){nn.JoinTable(1)(rf), nn.JoinTable(1)(rb)}
+    local lmat, rmat
+    if self.num_layers > 1 then
+
+      lmat = nn.JoinTable(1){nn.JoinTable(1)(lf), nn.JoinTable(1)(lb)}
+      rmat = nn.JoinTable(1){nn.JoinTable(1)(rf), nn.JoinTable(1)(rb)}
+
+    elseif self.num_layers == 1 then
+
+      lmat = nn.JoinTable(1){lf, lb}
+      rmat = nn.JoinTable(1){rf, rb}
+    end
 
     local mult_dist = nn.CMulTable(){lmat, rmat}
     local add_dist = nn.Abs()(nn.CSubTable(){lmat, rmat})
-    --local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*2*img_h)(nn.JoinTable(1){lmat, rmat}))
-    local out_mat = nn.Reshape(num_plate, img_h*img_w)(nn.JoinTable(1){mult_dist, add_dist})
 
+    inputFrameSize = img_h*img_w
+    num_plate=4
+    local out_mat = nn.Reshape(num_plate, inputFrameSize)(nn.JoinTable(1){mult_dist, add_dist})
     local inputs = {lf, lb, rf, rb}
     vecs_to_input = nn.gModule(inputs, {out_mat})
-    inputFrameSize = img_h*img_w
-
+    
   end
 
-  local outputFrameSize = 50
+  local outputFrameSize = 100
   local kw = 2
   --local pool_kw = num_plate-kw+1 --max over time pooling
   local pool_kw = 2
@@ -290,6 +300,7 @@ function LSTMSim:new_sim_module_conv1d()
   --local mlp_input_dim2 = (num_plate-kw+1-pool_kw+1-kw2+1-pool_kw+1) * 10
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
+
 
     :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw))
     :add(nn.Tanh())
@@ -308,6 +319,7 @@ function LSTMSim:new_sim_module_conv1d()
     :add(nn.Sigmoid()) --Tanh best dev score: 0.8320(0.8157), -- ReLU best dev score: 0.8380(0.8299) --Sigmoid best dev score: 0.8540(0.8321)
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
+
 
   return sim_module
 
