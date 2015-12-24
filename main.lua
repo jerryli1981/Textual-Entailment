@@ -71,32 +71,65 @@ end
 -- get paths
 local file_idx = 1
 local predictions_save_path, model_save_path, model_save_pre_path
-while true do
-  predictions_save_path = string.format(
-    predictions_dir .. '/ent-%s.%dl.%dd.%d.pred', args.model, args.num_layers, args.dim, file_idx)
-  model_save_path = string.format(
-    models_dir .. '/ent-%s.%dl.%dd.%d.th', args.model, args.num_layers, args.dim, file_idx)
-  model_save_pre_path = string.format(
-    models_dir .. '/ent-%s.%dl.%dd.%d.th', args.model, args.num_layers, args.dim, file_idx-1)
-  if lfs.attributes(predictions_save_path) == nil and lfs.attributes(model_save_path) == nil then
-    break
+
+if args.model == "treeLSTM" then
+
+  while true do
+    predictions_save_path = string.format(
+      predictions_dir .. '/ent-%s.%dd.%d.pred', args.model,args.dim, file_idx)
+    model_save_path = string.format(
+      models_dir .. '/ent-%s.%dd.%d.th', args.model, args.dim, file_idx)
+    model_save_pre_path = string.format(
+      models_dir .. '/ent-%s.%dd.%d.th', args.model, args.dim, file_idx-1)
+    if lfs.attributes(predictions_save_path) == nil and lfs.attributes(model_save_path) == nil then
+     break
+    end
+    file_idx = file_idx + 1
   end
-  file_idx = file_idx + 1
+
+elseif args.model == "seqLSTM" then
+
+  while true do
+    predictions_save_path = string.format(
+      predictions_dir .. '/ent-%s.%dl.%dd.%d.pred', args.model, args.num_layers, args.dim, file_idx)
+    model_save_path = string.format(
+      models_dir .. '/ent-%s.%dl.%dd.%d.th', args.model, args.num_layers, args.dim, file_idx)
+    model_save_pre_path = string.format(
+      models_dir .. '/ent-%s.%dl.%dd.%d.th', args.model, args.num_layers, args.dim, file_idx-1)
+    if lfs.attributes(predictions_save_path) == nil and lfs.attributes(model_save_path) == nil then
+     break
+    end
+    file_idx = file_idx + 1
+  end
+
 end
 
 local model
+
 if args.load == 'true' then
   print('using previous model ' .. model_save_pre_path)
   model = model_class.load(model_save_pre_path)
 else
   print('initialize new model')
-  model = model_class{
+  if args.model == "treeLSTM" then
+
+    model = model_class{
+    emb_vecs   = vecs,
+    mem_dim    = args.dim,
+    sim_nhidden = args.sim_nhidden
+    }
+
+  elseif args.model == "seqLSTM" then
+    model = model_class{
     emb_vecs   = vecs,
     mem_dim    = args.dim,
     structure = args.structure,
     num_layers = args.num_layers,
     sim_nhidden = args.sim_nhidden
-  }
+    }
+
+  end
+  
 end
 
 -- number of epochs to train
@@ -127,13 +160,23 @@ for i = 1, num_epochs do
   if dev_score >= best_dev_score then
     best_dev_score = dev_score
 
-    best_dev_model = model_class{
+    if args.model == "treeLSTM" then
+
+      best_dev_model = model_class{
+      emb_vecs   = vecs,
+      mem_dim    = args.dim,
+      sim_nhidden = args.sim_nhidden
+      }
+
+    elseif args.model == "seqLSTM" then
+      best_dev_model = model_class{
       emb_vecs   = vecs,
       mem_dim    = args.dim,
       structure = args.structure,
       num_layers = args.num_layers,
       sim_nhidden = args.sim_nhidden
-    }
+      }
+    end
 
     best_dev_model.params:copy(model.params)
 
@@ -143,7 +186,7 @@ for i = 1, num_epochs do
     local test_predictions = best_dev_model:predict_dataset(test_dataset)
     local test_score = accuracy(test_predictions, test_dataset.labels)
     printf('-- test score: %.4f\n', test_score)
-    
+
   end
 
 
@@ -170,8 +213,6 @@ if lfs.attributes(models_dir) == nil then
   lfs.mkdir(models_dir)
 end
 
-
-
 -- write predictions to disk
 local predictions_file = torch.DiskFile(predictions_save_path, 'w')
 print('writing predictions to ' .. predictions_save_path)
@@ -179,7 +220,6 @@ for i = 1, test_predictions:size(1) do
   predictions_file:writeFloat(test_predictions[i])
 end
 predictions_file:close()
-
 
 --write models to disk
 print('writing model to ' .. model_save_path)

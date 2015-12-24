@@ -206,3 +206,29 @@ function TreeLSTMSim:print_config()
   printf('%-25s = %.2e\n', 'word vector learning rate', self.emb_learning_rate)
   printf('%-25s = %d\n',   'sim module hidden dim', self.sim_nhidden)
 end
+
+--
+--Serialization
+--
+function TreeLSTMSim:save(path)
+  local config = {
+    batch_size = self.batch_size,
+    learning_rate = self.learning_rate,
+    mem_dim = self.mem_dim,
+    sim_nhidden = self.sim_nhidden,
+    reg = self.reg,
+  }
+
+  torch.save(path, {
+    params = self.params,
+    config = config,
+    })
+
+end
+
+function TreeLSTMSim.load(path)
+  local state = torch.load(path)
+  local model = LSTMSim.new(state.config)
+  model.params:copy(state.params)
+  return model
+end

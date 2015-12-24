@@ -41,7 +41,7 @@ function LSTMSim:__init(config)
     error('invalid LSTM type: ' .. self.structure)
   end
 
-  self.sim_module = self:new_sim_module_conv2d()
+  self.sim_module = self:new_sim_module_conv1d()
 
   local modules = nn.Parallel()
     :add(self.llstm)
@@ -192,8 +192,11 @@ function LSTMSim:new_sim_module_conv2d()
   local img_h = self.num_layers
   local img_w = self.num_layers
 
-  local num_plate = 5
-  out_mat = nn.Reshape(num_plate, img_h, img_w)(nn.JoinTable(1){cos_mat, radio_mat, p1_mat, dot_mat, conv1d_mat})
+  --local num_plate = 5
+  --out_mat = nn.Reshape(num_plate, img_h, img_w)(nn.JoinTable(1){cos_mat, radio_mat, p1_mat, dot_mat, conv1d_mat})
+
+  local num_plate = 2
+  out_mat = nn.Reshape(num_plate, img_h, img_w)(nn.JoinTable(1){cos_mat, conv1d_mat})
 
   vecs_to_input = nn.gModule(inputs, {out_mat})
 
@@ -269,7 +272,7 @@ function LSTMSim:new_sim_module_conv1d()
     local mult_dist = nn.CMulTable(){lmat, rmat}
     local add_dist = nn.Abs()(nn.CSubTable(){lmat, rmat})
     --local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*2*img_h)(nn.JoinTable(1){lmat, rmat}))
-    local out_mat = nn.Reshape(num_plate, img_h*img_w)(nn.JoinTable(1){mult_dist, add_dist, max_dist})
+    local out_mat = nn.Reshape(num_plate, img_h*img_w)(nn.JoinTable(1){mult_dist, add_dist})
 
     local inputs = {lf, lb, rf, rb}
     vecs_to_input = nn.gModule(inputs, {out_mat})
