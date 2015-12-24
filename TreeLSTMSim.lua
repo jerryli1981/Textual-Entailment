@@ -33,7 +33,7 @@ function TreeLSTMSim:__init(config)
   self.treelstm = ChildSumTreeLSTM(treelstm_config)
 
   -- similarity model
-  self.sim_module = self:new_sim_module()
+  self.sim_module = self:new_sim_module_CNN()
 
   local modules = nn.Parallel()
     :add(self.treelstm)
@@ -52,10 +52,13 @@ function TreeLSTMSim:new_sim_module()
   --local vec_dist_feats_1 = nn.JoinTable(1){vec_dist_feats, cosine_dist}
   vecs_to_input = nn.gModule({lvec, rvec}, {vec_dist_feats})
 
+  mlp_input_dim = 2 * self.mem_dim
+
    -- define similarity model architecture
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
-    :add(nn.Linear(2 * self.mem_dim, self.sim_nhidden))
+    :add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
+    :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
     :add(nn.Sigmoid())    -- does better than tanh
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
@@ -64,41 +67,40 @@ end
 
 
 function TreeLSTMSim:new_sim_module_CNN()
-  local seq_length = 72
-  local inputFrameSize = 10
-  local outputFrameSize = 10
-  local kernel_width = 3
-  local reduced_l = seq_length - kernel_width + 1 
-
   local vecs_to_input
-  local lmat = nn.Identity()()
-  local rmat = nn.Identity()()
-  local vec_dist_feats = nn.JoinTable(1){lmat, rmat}
-  vecs_to_input = nn.gModule({lmat, rmat}, {vec_dist_feats})
+  local lvec = nn.Identity()()
+  local rvec = nn.Identity()()
+  local mult_dist = nn.CMulTable(){lvec, rvec}
+  local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
 
-  --[[
-  sim_matrix = torch.randn(36,36)
+  num_plate = 4
+  local inputFrameSize = self.mem_dim/2
 
-        for i =1, 36 do
-            vec_l = matrix_l[i]
-          for j=1, 36 do
-            vec_r = matrix_r[j]
-            sim_val = nn.CosineDistance():forward{vec_l, vec_r}
-            sim_matrix[i][j] = sim_val
-          end
-        end
-  --]]
+  local out_mat = nn.Reshape(num_plate, inputFrameSize)(nn.JoinTable(1){mult_dist, add_dist})
+  vecs_to_input = nn.gModule({lvec, rvec}, {out_mat})
 
-   -- define similarity model architecture
+
+  local outputFrameSize = 100
+
+  local kw = 2
+  local pool_kw = 2
+  local mlp_input_dim = (num_plate-kw+1-pool_kw+1) * outputFrameSize
+
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
-    :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kernel_width))--34 * 10
+
+    :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw))
     :add(nn.Tanh())
-    :add(nn.TemporalMaxPooling(reduced_l)) --1*10
-    :add(nn.Linear(outputFrameSize, self.sim_nhidden))
+    :add(nn.TemporalMaxPooling(pool_kw, 1))
+
+    :add(nn.Reshape(mlp_input_dim))
+
+    :add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
+    :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
     :add(nn.Sigmoid())    -- does better than tanh
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
+
   return sim_module
 
 end
@@ -128,6 +130,7 @@ function TreeLSTMSim:train(dataset)
         local lrep = self.treelstm:forward(ltree, linputs)[2]
         local rrep = self.treelstm:forward(rtree, rinputs)[2]
         local output = self.sim_module:forward{lrep, rrep}
+        --dbg()
 
         local example_loss = self.criterion:forward(output, ent)
         loss = loss + example_loss
