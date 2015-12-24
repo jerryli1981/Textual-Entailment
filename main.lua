@@ -137,7 +137,16 @@ for i = 1, num_epochs do
 
     best_dev_model.params:copy(model.params)
 
+      -- evaluate
+    header('Evaluating on test set')
+    printf('-- using model with dev score = %.4f\n', best_dev_score)
+    local test_predictions = best_dev_model:predict_dataset(test_dataset)
+    local test_score = accuracy(test_predictions, test_dataset.labels)
+    printf('-- test score: %.4f\n', test_score)
+    
   end
+
+
 end
 
 printf('-- best dev score: %.4f\n', best_dev_score)
