@@ -47,15 +47,15 @@ function TreeLSTMSim:new_sim_module()
   local rvec = nn.Identity()()
   local mult_dist = nn.CMulTable(){lvec, rvec}
   local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
-  local cosine_dist = nn.CosineDistance(){lvec, rvec}
+  --local cosine_dist = nn.CosineDistance(){lvec, rvec}
   local vec_dist_feats = nn.JoinTable(1){mult_dist, add_dist}
-  local vec_dist_feats_1 = nn.JoinTable(1){vec_dist_feats, cosine_dist}
-  vecs_to_input = nn.gModule({lvec, rvec}, {vec_dist_feats_1})
+  --local vec_dist_feats_1 = nn.JoinTable(1){vec_dist_feats, cosine_dist}
+  vecs_to_input = nn.gModule({lvec, rvec}, {vec_dist_feats})
 
    -- define similarity model architecture
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
-    :add(nn.Linear(2 * self.mem_dim+1, self.sim_nhidden))
+    :add(nn.Linear(2 * self.mem_dim, self.sim_nhidden))
     :add(nn.Sigmoid())    -- does better than tanh
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
