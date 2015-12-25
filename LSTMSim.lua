@@ -283,14 +283,14 @@ function LSTMSim:new_sim_module_conv1d()
     local add_dist = nn.Abs()(nn.CSubTable(){lmat, rmat})
 
     inputFrameSize = img_h*img_w
-    num_plate=4
-    local out_mat = nn.Reshape(num_plate, inputFrameSize)(nn.JoinTable(1){mult_dist, add_dist})
+    num_plate=8
+    local out_mat = nn.Reshape(num_plate, inputFrameSize)(nn.JoinTable(1){mult_dist, add_dist, lmat, rmat})
     local inputs = {lf, lb, rf, rb}
     vecs_to_input = nn.gModule(inputs, {out_mat})
     
   end
 
-  local outputFrameSize = 100
+  local outputFrameSize = 50
   local kw = 2
   --local pool_kw = num_plate-kw+1 --max over time pooling
   local pool_kw = 2
@@ -301,7 +301,7 @@ function LSTMSim:new_sim_module_conv1d()
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
 
-
+    
     :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw))
     :add(nn.Tanh())
     :add(nn.TemporalMaxPooling(pool_kw, 1))
@@ -319,7 +319,7 @@ function LSTMSim:new_sim_module_conv1d()
     :add(nn.Sigmoid()) --Tanh best dev score: 0.8320(0.8157), -- ReLU best dev score: 0.8380(0.8299) --Sigmoid best dev score: 0.8540(0.8321)
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
-
+    
 
   return sim_module
 
