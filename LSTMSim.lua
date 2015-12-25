@@ -295,9 +295,9 @@ function LSTMSim:new_sim_module_conv1d()
   --local pool_kw = num_plate-kw+1 --max over time pooling
   local pool_kw = 2
   local mlp_input_dim = (num_plate-kw+1-pool_kw+1) * outputFrameSize
-  --local outputFrameSize2 = 10
-  --local kw2=2
-  --local mlp_input_dim2 = (num_plate-kw+1-pool_kw+1-kw2+1-pool_kw+1) * 10
+  local outputFrameSize2 = 10
+  local kw2=2
+  local mlp_input_dim2 = (num_plate-kw+1-pool_kw+1-kw2+1-pool_kw+1) * outputFrameSize2
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
 
@@ -306,16 +306,16 @@ function LSTMSim:new_sim_module_conv1d()
     :add(nn.Tanh())
     :add(nn.TemporalMaxPooling(pool_kw, 1))
 
-    --:add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2))
-    --:add(nn.Tanh())
-    --:add(nn.TemporalMaxPooling(pool_kw, 1))
-    --:add(nn.Reshape(mlp_input_dim2))
-    --:add(HighwayMLP.mlp(mlp_input_dim2, 1))
-    --:add(nn.Linear(mlp_input_dim2, self.sim_nhidden))
+    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2))
+    :add(nn.Tanh())
+    :add(nn.TemporalMaxPooling(pool_kw, 1))
+    :add(nn.Reshape(mlp_input_dim2))
+    :add(HighwayMLP.mlp(mlp_input_dim2, 1, nil, nn.Sigmoid()))
+    :add(nn.Linear(mlp_input_dim2, self.sim_nhidden))
 
-    :add(nn.Reshape(mlp_input_dim))
-    :add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
-    :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
+    --:add(nn.Reshape(mlp_input_dim))
+    --:add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
+    --:add(nn.Linear(mlp_input_dim, self.sim_nhidden))
     :add(nn.Sigmoid()) --Tanh best dev score: 0.8320(0.8157), -- ReLU best dev score: 0.8380(0.8299) --Sigmoid best dev score: 0.8540(0.8321)
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
