@@ -280,22 +280,34 @@ function LSTMSim:new_sim_module_conv1d()
     end
 
     local mult_dist = nn.CMulTable(){lmat, rmat}
-    local add_dist = nn.Abs()(nn.CSubTable(){lmat, rmat})
+    local sub_dist = nn.CSubTable(){lmat, rmat}
+    local abssub_dist = nn.Abs()(sub_dist)
+    --local add_dist = nn.CAddTable(){lmat, rmat}
+    --local div_dist = nn.CDivTable(){lmat, rmat}
+    local mean_dist = nn.Mean(1)(nn.Reshape(2,self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))
+    local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))
+
+    local relative_change = nn.CDivTable(){sub_dist, lmat}
+    local relative_difference = nn.Abs()(nn.CDivTable(){sub_dist, mean_dist})
+
+    --local sqr_dist = nn.Square()(nn.CSubTable(){lmat, rmat})
+    --local sqrt_dist = nn.Sqrt()(nn.CSubTable(){lmat, rmat})
 
     inputFrameSize = img_h*img_w
     num_plate=8
-    local out_mat = nn.Reshape(num_plate, inputFrameSize)(nn.JoinTable(1){mult_dist, add_dist, lmat, rmat})
+    local out_mat = nn.Reshape(num_plate, inputFrameSize)(nn.JoinTable(1){mult_dist, abssub_dist, 
+      relative_change, relative_difference})
     local inputs = {lf, lb, rf, rb}
     vecs_to_input = nn.gModule(inputs, {out_mat})
     
   end
 
-  local outputFrameSize = 50
+  local outputFrameSize = 100
   local kw = 2
   --local pool_kw = num_plate-kw+1 --max over time pooling
   local pool_kw = 2
   local mlp_input_dim = (num_plate-kw+1-pool_kw+1) * outputFrameSize
-  local outputFrameSize2 = 10
+  local outputFrameSize2 = 50
   local kw2=2
   local mlp_input_dim2 = (num_plate-kw+1-pool_kw+1-kw2+1-pool_kw+1) * outputFrameSize2
   local sim_module = nn.Sequential()
