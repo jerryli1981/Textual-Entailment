@@ -284,11 +284,11 @@ function LSTMSim:new_sim_module_conv1d()
     local abssub_dist = nn.Abs()(sub_dist)
     --local add_dist = nn.CAddTable(){lmat, rmat}
     --local div_dist = nn.CDivTable(){lmat, rmat}
-    local mean_dist = nn.Mean(1)(nn.Reshape(2,self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))
+    --local mean_dist = nn.Mean(1)(nn.Reshape(2,self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))
     --local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))
 
     local relative_change = nn.MulConstant(0.01)(nn.CDivTable(){sub_dist, rmat})
-    local relative_difference = nn.MulConstant(0.01)(nn.Abs()(nn.CDivTable(){abssub_dist, mean_dist}))
+    --local relative_difference = nn.MulConstant(0.01)(nn.Abs()(nn.CDivTable(){abssub_dist, mean_dist}))
 
     --local conv1d_dist = nn.MulConstant(0.01)(nn.View(self.mem_dim*img_h*2)(nn.TemporalConvolution(self.mem_dim*img_h*2, self.mem_dim*img_h*2, 2, 1)
         --(nn.Reshape(2, self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))))
@@ -297,9 +297,9 @@ function LSTMSim:new_sim_module_conv1d()
     --local sqrt_dist = nn.Sqrt()(nn.CSubTable(){lmat, rmat})
 
     inputFrameSize = img_h*img_w
-    num_plate=8
+    num_plate=6
     local out_mat = nn.Reshape(num_plate, inputFrameSize)(nn.JoinTable(1){mult_dist, abssub_dist, 
-        relative_change, relative_difference,conv1d_dist})
+        relative_change})
 
     local inputs = {lf, lb, rf, rb}
     vecs_to_input = nn.gModule(inputs, {out_mat})
@@ -320,13 +320,11 @@ function LSTMSim:new_sim_module_conv1d()
   local mlp_input_dim2 = (((((num_plate-kw)/dw+1-pool_kw)/pool_dw+1-kw2)/dw2+1-pool_kw2)/pool_dw2+1) * outputFrameSize2
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
-
-    
+  
     :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw, dw))
     :add(nn.Tanh())
     :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
 
-  
     :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, dw2))
     :add(nn.Tanh())
     :add(nn.TemporalMaxPooling(pool_kw2, pool_dw2))
@@ -334,7 +332,6 @@ function LSTMSim:new_sim_module_conv1d()
     :add(HighwayMLP.mlp(mlp_input_dim2, 1, nil, nn.Sigmoid()))
     :add(nn.Linear(mlp_input_dim2, self.sim_nhidden))
     
-
     --[[
     :add(nn.Reshape(mlp_input_dim))
     :add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
