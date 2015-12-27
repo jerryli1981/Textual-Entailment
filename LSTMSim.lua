@@ -287,11 +287,11 @@ function LSTMSim:new_sim_module_conv1d()
     local mean_dist = nn.Mean(1)(nn.Reshape(2,self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))
     --local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))
 
-    --local relative_change = nn.CDivTable(){abssub_dist, nn.Abs()(rmat)}
-    local relative_difference = nn.Abs()(nn.CDivTable(){abssub_dist, mean_dist})
+    local relative_change = nn.MulConstant(0.01)(nn.CDivTable(){sub_dist, rmat})
+    local relative_difference = nn.MulConstant(0.01)(nn.Abs()(nn.CDivTable(){abssub_dist, mean_dist}))
 
-    local conv1d_dist = nn.View(self.mem_dim*img_h*2)(nn.TemporalConvolution(self.mem_dim*img_h*2, self.mem_dim*img_h*2, 2, 1)
-        (nn.Reshape(2, self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat})))
+    --local conv1d_dist = nn.MulConstant(0.01)(nn.View(self.mem_dim*img_h*2)(nn.TemporalConvolution(self.mem_dim*img_h*2, self.mem_dim*img_h*2, 2, 1)
+        --(nn.Reshape(2, self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))))
 
     --local sqr_dist = nn.Square()(nn.CSubTable(){lmat, rmat})
     --local sqrt_dist = nn.Sqrt()(nn.CSubTable(){lmat, rmat})
@@ -299,43 +299,52 @@ function LSTMSim:new_sim_module_conv1d()
     inputFrameSize = img_h*img_w
     num_plate=8
     local out_mat = nn.Reshape(num_plate, inputFrameSize)(nn.JoinTable(1){mult_dist, abssub_dist, 
-        relative_difference, conv1d_dist})
+        relative_change, relative_difference,conv1d_dist})
 
     local inputs = {lf, lb, rf, rb}
     vecs_to_input = nn.gModule(inputs, {out_mat})
     
   end
 
-  local outputFrameSize = 100
+  local outputFrameSize = img_w
   local kw = 2
-  --local pool_kw = num_plate-kw+1 --max over time pooling
-  local pool_kw = 2
-  local mlp_input_dim = (num_plate-kw+1-pool_kw+1) * outputFrameSize
-  local outputFrameSize2 = 50
-  local kw2=2
-  local mlp_input_dim2 = (num_plate-kw+1-pool_kw+1-kw2+1-pool_kw+1) * outputFrameSize2
+  local dw = 2
+  local pool_kw = 1
+  local pool_dw = 1
+  local mlp_input_dim = (((num_plate-kw)/dw+1-pool_kw)/pool_dw+1) * outputFrameSize
+  local outputFrameSize2 = img_w
+  local kw2=1
+  local dw2=1
+  local pool_kw2 = 1
+  local pool_dw2 = 1
+  local mlp_input_dim2 = (((((num_plate-kw)/dw+1-pool_kw)/pool_dw+1-kw2)/dw2+1-pool_kw2)/pool_dw2+1) * outputFrameSize2
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
 
-
-    :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw))
+    
+    :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw, dw))
     :add(nn.Tanh())
-    :add(nn.TemporalMaxPooling(pool_kw, 1))
+    :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
 
-    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2))
+  
+    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, dw2))
     :add(nn.Tanh())
-    :add(nn.TemporalMaxPooling(pool_kw, 1))
+    :add(nn.TemporalMaxPooling(pool_kw2, pool_dw2))
     :add(nn.Reshape(mlp_input_dim2))
     :add(HighwayMLP.mlp(mlp_input_dim2, 1, nil, nn.Sigmoid()))
     :add(nn.Linear(mlp_input_dim2, self.sim_nhidden))
+    
 
-    --:add(nn.Reshape(mlp_input_dim))
-    --:add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
-    --:add(nn.Linear(mlp_input_dim, self.sim_nhidden))
+    --[[
+    :add(nn.Reshape(mlp_input_dim))
+    :add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
+    :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
+    --]]
+
     :add(nn.Sigmoid()) --Tanh best dev score: 0.8320(0.8157), -- ReLU best dev score: 0.8380(0.8299) --Sigmoid best dev score: 0.8540(0.8321)
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
-
+    
 
   return sim_module
 
