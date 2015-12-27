@@ -285,10 +285,13 @@ function LSTMSim:new_sim_module_conv1d()
     --local add_dist = nn.CAddTable(){lmat, rmat}
     --local div_dist = nn.CDivTable(){lmat, rmat}
     local mean_dist = nn.Mean(1)(nn.Reshape(2,self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))
-    local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))
+    --local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))
 
-    local relative_change = nn.CDivTable(){sub_dist, lmat}
-    local relative_difference = nn.Abs()(nn.CDivTable(){sub_dist, mean_dist})
+    --local relative_change = nn.CDivTable(){abssub_dist, nn.Abs()(rmat)}
+    local relative_difference = nn.Abs()(nn.CDivTable(){abssub_dist, mean_dist})
+
+    local conv1d_dist = nn.View(self.mem_dim*img_h*2)(nn.TemporalConvolution(self.mem_dim*img_h*2, self.mem_dim*img_h*2, 2, 1)
+        (nn.Reshape(2, self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat})))
 
     --local sqr_dist = nn.Square()(nn.CSubTable(){lmat, rmat})
     --local sqrt_dist = nn.Sqrt()(nn.CSubTable(){lmat, rmat})
@@ -296,7 +299,8 @@ function LSTMSim:new_sim_module_conv1d()
     inputFrameSize = img_h*img_w
     num_plate=8
     local out_mat = nn.Reshape(num_plate, inputFrameSize)(nn.JoinTable(1){mult_dist, abssub_dist, 
-      relative_change, relative_difference})
+        relative_difference, conv1d_dist})
+
     local inputs = {lf, lb, rf, rb}
     vecs_to_input = nn.gModule(inputs, {out_mat})
     
@@ -313,7 +317,7 @@ function LSTMSim:new_sim_module_conv1d()
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
 
-    
+
     :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw))
     :add(nn.Tanh())
     :add(nn.TemporalMaxPooling(pool_kw, 1))
@@ -331,7 +335,7 @@ function LSTMSim:new_sim_module_conv1d()
     :add(nn.Sigmoid()) --Tanh best dev score: 0.8320(0.8157), -- ReLU best dev score: 0.8380(0.8299) --Sigmoid best dev score: 0.8540(0.8321)
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
-    
+
 
   return sim_module
 
